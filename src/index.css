@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: #f8fafc;
+    color: #1e293b;
+    margin: 0;
+    padding: 0;
+  }
+
+  #root {
+    min-height: 100vh;
+    width: 100%;
+  }
+}
+
+@layer components {
+  /* Status badge colors */
+  .badge-not-started {
+    background-color: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+  }
+  .badge-in-progress {
+    background-color: #fef9c3;
+    color: #a16207;
+    border: 1px solid #fde68a;
+  }
+  .badge-on-hold {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+  }
+  .badge-need-to-review {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+  }
+  .badge-done {
+    background-color: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+  }
+
+  /* Priority badge colors */
+  .badge-priority-1 {
+    background-color: #7f1d1d;
+    color: #fef2f2;
+  }
+  .badge-priority-2 {
+    background-color: #ef4444;
+    color: #fff;
+  }
+  .badge-priority-3 {
+    background-color: #eab308;
+    color: #1a1a1a;
+  }
+  .badge-priority-4 {
+    background-color: #f97316;
+    color: #fff;
+  }
+  .badge-priority-5 {
+    background-color: #94a3b8;
+    color: #fff;
+  }
+
+  /* Overdue date */
+  .date-overdue {
+    color: #dc2626;
+    font-weight: 600;
+  }
+
+  /* Table rows */
+  .task-row:hover td {
+    background-color: #f1f5f9;
+  }
+  .task-row-alt td {
+    background-color: #f8fafc;
+  }
+}
