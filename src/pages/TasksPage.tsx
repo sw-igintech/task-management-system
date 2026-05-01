@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Menu, X } from 'lucide-react';
 import type { Task } from '../types';
 import { useTasks } from '../hooks/useTasks';
 import { TaskTable } from '../components/TaskTable';
@@ -34,8 +34,8 @@ export function TasksPage({ hookData }: TasksPageProps) {
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Calculate task counts for smart views
   const activeTasks = tasks.filter(t => !t.archived);
   const taskCounts = {
     'all-active': activeTasks.filter(t => t.status !== 'done').length,
@@ -89,10 +89,13 @@ export function TasksPage({ hookData }: TasksPageProps) {
     setEditTask(null);
   };
 
+  const closeMobileSidebar = () => setMobileSidebarOpen(false);
+
   return (
-    <div className="flex gap-4 p-4">
-      {/* Sidebar */}
-      <div className="shrink-0">
+    <div className="flex gap-4 p-3 md:p-4">
+
+      {/* ── Desktop sidebar (md+): always visible, static ── */}
+      <div className="hidden md:block md:shrink-0">
         <SmartViews
           filters={filters}
           people={people}
@@ -101,11 +104,61 @@ export function TasksPage({ hookData }: TasksPageProps) {
         />
       </div>
 
-      {/* Main content */}
+      {/* ── Mobile drawer ── */}
+      {mobileSidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40"
+            onClick={closeMobileSidebar}
+            aria-hidden="true"
+          />
+          {/* Drawer panel */}
+          <div
+            className="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-2xl flex flex-col"
+            role="dialog"
+            aria-label="Smart Views navigation"
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <span className="font-semibold text-gray-800 text-sm">Views</span>
+              <button
+                onClick={closeMobileSidebar}
+                className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 transition-colors"
+                aria-label="Close menu"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {/* SmartViews inside drawer */}
+            <div className="flex-1 overflow-y-auto p-3">
+              <SmartViews
+                filters={filters}
+                people={people}
+                onChange={setFilters}
+                taskCounts={taskCounts}
+                onClose={closeMobileSidebar}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Main content ── */}
       <div className="flex-1 flex flex-col gap-3 min-w-0">
         {/* Top bar */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-900">Tasks</h1>
+        <div className="flex items-center gap-2">
+          {/* Hamburger: mobile only */}
+          <button
+            className="md:hidden p-1.5 rounded-md text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Open Smart Views"
+          >
+            <Menu size={18} />
+          </button>
+
+          <h1 className="text-xl font-bold text-gray-900 flex-1">Tasks</h1>
+
           <div className="flex items-center gap-2">
             <PeopleManager
               people={people}
@@ -116,7 +169,8 @@ export function TasksPage({ hookData }: TasksPageProps) {
               onClick={() => setAddModalOpen(true)}
             >
               <Plus size={14} />
-              Add Task
+              <span className="hidden sm:inline">Add Task</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </div>
         </div>

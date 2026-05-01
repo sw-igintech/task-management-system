@@ -68,9 +68,10 @@ interface SmartViewsProps {
   people: Person[];
   onChange: (filters: TaskFilters) => void;
   taskCounts: Record<string, number>;
+  onClose?: () => void;
 }
 
-export function SmartViews({ filters, people, onChange, taskCounts }: SmartViewsProps) {
+export function SmartViews({ filters, people, onChange, taskCounts, onClose }: SmartViewsProps) {
   const DEFAULT_FILTERS: TaskFilters = {
     search: '',
     status: 'all',
@@ -83,6 +84,7 @@ export function SmartViews({ filters, people, onChange, taskCounts }: SmartViews
 
   const applyView = (view: SmartView) => {
     onChange({ ...DEFAULT_FILTERS, ...view.filters });
+    onClose?.();
   };
 
   const isActiveView = (view: SmartView): boolean => {
@@ -97,6 +99,7 @@ export function SmartViews({ filters, people, onChange, taskCounts }: SmartViews
       ...DEFAULT_FILTERS,
       responsible_person_id: personId,
     });
+    onClose?.();
   };
 
   return (
