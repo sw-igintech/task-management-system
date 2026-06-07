@@ -29,11 +29,28 @@ If you want data persisted in a shared database, see `SETUP_REQUIRED_FROM_USER.m
 
 ## Scripts
 
-```bash
-# Preview parsed task data (generates scripts/parsed_tasks.json)
-npx tsx scripts/import_pdf_tasks.ts --dry-run
+### Import / replace tasks from a CSV (or Excel) file
 
-# Import tasks to Supabase (requires env vars configured)
+The current source of truth is `New Engineering Tasks - 2026 - Engineering Tasks.csv`.
+See `docs/import-tasks.md` for the full guide.
+
+```bash
+# Dry-run — never writes to Supabase; parses, validates, reports
+npm run import:tasks -- --file "New Engineering Tasks - 2026 - Engineering Tasks.csv" --dry-run
+
+# Apply — backs up, deletes ALL existing tasks, then inserts the CSV tasks
+# (people are never deleted; missing people are created)
+npm run import:tasks -- --file "New Engineering Tasks - 2026 - Engineering Tasks.csv" --apply
+```
+
+> ⚠️ `--apply` deletes all existing tasks before inserting. A timestamped backup
+> of tasks + people is written to `backups/` (gitignored) first.
+
+### Legacy PDF importer
+
+```bash
+# Original hardcoded-from-PDF importer (kept for reference)
+npx tsx scripts/import_pdf_tasks.ts --dry-run
 npx tsx scripts/import_pdf_tasks.ts --import
 ```
 

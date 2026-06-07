@@ -10,8 +10,14 @@ dist-ssr/
 .env.local
 .env.*.local
 
-# Local Claude/session context — not for version control
-claude/
+# Backups produced by the task import script — never commit
+backups/
+
+# Private task source exports (internal engineering data) — kept out of version control.
+# These are the import source of truth; the data lives in Supabase after import.
+New Engineering Tasks*.csv
+New Engineering Tasks*.xlsx
+New Engineering Tasks*.pdf
 
 # Logs
 logs/
