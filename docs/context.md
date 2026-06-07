@@ -121,7 +121,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 5. **Frontend Supabase path fixed** — `useTasks.ts` originally had the Supabase branch unimplemented (app showed 0 tasks). It was rewritten to implement parallel fetch + client-side join + full CRUD.
 6. **Vercel deployment** — Completed at the production URL above; auto-deploys from `main`.
 7. **Mobile Smart Views drawer** — Collapsible Smart Views sidebar added for mobile; desktop layout unchanged.
-8. **CSV task replacement (this task)** — Old task data replaced with `New Engineering Tasks - 2026 - Engineering Tasks.csv` via a new safe import workflow (`scripts/import_excel_tasks.ts`). The `claude/` context folder was renamed to `docs/`. See section 6.
+8. **CSV task replacement** — Old task data replaced with `New Engineering Tasks - 2026 - Engineering Tasks.csv` via a new safe import workflow (`scripts/import_excel_tasks.ts`). The `claude/` context folder was renamed to `docs/`. See section 6.
+9. **Filters + inline editing (this task)** — Added an active-filter-chips row and moved task editing from a modal to inline expanded-row editing. Verified the post-import counts/statuses. See section 8.
 
 ---
 
@@ -170,8 +171,28 @@ See `docs/import-tasks.md` for the full operator guide.
 
 ## 7. Current Status
 
-- **Build:** `npm run build` passes (0 TypeScript errors).
-- **Lint:** `npm run lint` reports pre-existing `react-hooks` errors in `src/` (e.g. `useTasks.ts`, `TaskTable.tsx`) unrelated to the import work; the import script lints clean.
-- **DB:** 128 tasks, 5 people after the CSV import.
+- **Build:** `npm run build` passes (0 TypeScript errors). `npm run build` runs `tsc -b` so it doubles as the typecheck (no separate `typecheck` script).
+- **Lint:** `npm run lint` reports **pre-existing** problems only (2 errors + 2 warnings), all in files unrelated to recent work: `useTasks.ts` (`react-hooks/set-state-in-effect`) and `TaskForm.tsx` (`no-explicit-any` on the zodResolver cast). `TaskTable.tsx` has a pre-existing TanStack `incompatible-library` **warning**. The import script and the new UI files lint clean.
+- **DB:** 128 tasks, 5 people. `archived` = 0. Status counts: done=59, not_started=36, in_progress=21, on_hold=7, need_to_review=5.
 - **Deployed:** Vercel auto-deploys from `main`.
-- **Possible follow-ups:** add Supabase Auth (RLS currently permissive); 2 CSV rows have no responsible person (stored as unassigned); consider code-splitting the >500 kB bundle.
+- **Possible follow-ups:** add Supabase Auth (RLS currently permissive); 2 tasks have no responsible person (stored as unassigned); consider code-splitting the >500 kB bundle.
+
+---
+
+## 8. UI: Counts, Active-Filter Chips, Inline Editing
+
+### Task-count verification (canonical status: `need_to_review`)
+- **`need_review` vs `need_to_review`:** the entire project — `types/index.ts`, `lib/utils.ts` (labels + badge map + `statusFromRaw`), `lib/storage.ts`, `SmartViews.tsx`, `TasksPage.tsx`, `TaskForm.tsx` zod enum, `supabase/schema.sql` CHECK, and the importer — uses **`need_to_review`**. The Supabase DB also contains only `need_to_review`. There is **no** `need_review` anywhere. Canonical value = **`need_to_review`**. No migration was needed.
+- **Why the counts look the way they do:** top-right / FilterBar shows **128** = all non-archived tasks (the total). Smart View **"All Active" = 69** = non-archived **and** `status !== 'done'` (computed in `TasksPage.taskCounts['all-active']`, mirroring `storage.getStats`). 128 − 59 done = 69. Both are correct; nothing is hidden. (There is no place that computes 123 — that was a misread.) "Need Review" smart view counts tasks with `status === 'need_to_review'` (= 5).
+- A clarifying tooltip was added to the **All Active** smart view explaining it excludes Done/archived.
+
+### Active-filter chips — `src/components/ActiveFilterChips.tsx`
+- Rendered inside `FilterBar` (bottom of the filter card). Returns `null` (no space) when no filter is active.
+- One chip per active filter: Search, Status, Priority, Person, Overdue only, Due this week, Show archived. Each chip has an X that resets just that filter; a **Clear all** button resets everything. Uses existing `filters` state + `onChange`. Wraps with `flex-wrap` for mobile.
+
+### Inline expanded-row editing (replaces the Edit modal)
+- The **pencil** icon no longer opens a modal. It expands the row (if collapsed) and switches the expanded area into an inline `TaskForm` (reused as-is) with **Cancel** / **Update Task** buttons.
+- Edit state lives in `TaskTable` (`editingId`); per-row saving/error state lives in `TaskRow`. Save goes through the existing `updateTask` (`TasksPage.handleUpdateTask` → `useTasks.updateTask`) — same path as before, returns `Task | null`.
+- Success → exit edit mode, row stays expanded showing updated values. Failure → stays in edit mode, **keeps the user's input**, shows an inline error. Cancel → exits edit mode (RHF discards changes).
+- Clicking the pencil while collapsed opens the row directly in edit mode. Clicking the row still toggles expand/collapse (collapsing also exits edit mode). **Add Task remains a modal** — only editing moved inline.
+- Editable fields: title, description, notes, status, priority, responsible person, due date (same set as the old modal; `type` is not edited because the form never supported it).

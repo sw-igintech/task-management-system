@@ -5,7 +5,7 @@ import { useTasks } from '../hooks/useTasks';
 import { TaskTable } from '../components/TaskTable';
 import { FilterBar } from '../components/FilterBar';
 import { SmartViews } from '../components/SmartViews';
-import { TaskForm } from '../components/TaskForm';
+import { TaskForm, type TaskFormData } from '../components/TaskForm';
 import { PeopleManager } from '../components/PeopleManager';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
@@ -33,7 +33,6 @@ export function TasksPage({ hookData }: TasksPageProps) {
   } = hookData;
 
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [editTask, setEditTask] = useState<Task | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const activeTasks = tasks.filter(t => !t.archived);
@@ -67,17 +66,9 @@ export function TasksPage({ hookData }: TasksPageProps) {
     setAddModalOpen(false);
   };
 
-  const handleEditTask = (data: {
-    title: string;
-    status: Task['status'];
-    priority: number;
-    responsible_person_id?: string;
-    due_date?: string | null;
-    notes?: string;
-    description?: string;
-  }) => {
-    if (!editTask) return;
-    updateTask(editTask.id, {
+  // Inline edit (expanded row) — saves via the existing updateTask logic.
+  const handleUpdateTask = (id: string, data: TaskFormData) =>
+    updateTask(id, {
       title: data.title,
       status: data.status,
       priority: data.priority as Task['priority'],
@@ -86,8 +77,6 @@ export function TasksPage({ hookData }: TasksPageProps) {
       notes: data.notes,
       description: data.description,
     });
-    setEditTask(null);
-  };
 
   const closeMobileSidebar = () => setMobileSidebarOpen(false);
 
@@ -187,10 +176,11 @@ export function TasksPage({ hookData }: TasksPageProps) {
         {/* Table */}
         <TaskTable
           tasks={filteredTasks}
+          people={people}
           sortField={sortField}
           sortDirection={sortDirection}
           onSort={setSortField}
-          onEdit={setEditTask}
+          onUpdateTask={handleUpdateTask}
           onArchive={archiveTask}
           onRestore={restoreTask}
         />
@@ -207,22 +197,6 @@ export function TasksPage({ hookData }: TasksPageProps) {
           onSubmit={handleAddTask}
           onCancel={() => setAddModalOpen(false)}
         />
-      </Modal>
-
-      {/* Edit Task Modal */}
-      <Modal
-        open={editTask !== null}
-        onClose={() => setEditTask(null)}
-        title="Edit Task"
-      >
-        {editTask && (
-          <TaskForm
-            task={editTask}
-            people={people}
-            onSubmit={handleEditTask}
-            onCancel={() => setEditTask(null)}
-          />
-        )}
       </Modal>
     </div>
   );

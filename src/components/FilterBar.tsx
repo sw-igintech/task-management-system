@@ -2,6 +2,7 @@ import { Search, X } from 'lucide-react';
 import type { TaskFilters, Person } from '../types';
 import { STATUS_LABELS, PRIORITY_LABELS } from '../lib/utils';
 import { Button } from './ui/Button';
+import { ActiveFilterChips } from './ActiveFilterChips';
 
 interface FilterBarProps {
   filters: TaskFilters;
@@ -134,6 +135,9 @@ export function FilterBar({ filters, people, onChange, totalCount, filteredCount
             : `${filteredCount} of ${totalCount} tasks`}
         </span>
       </div>
+
+      {/* Active filter chips (renders nothing when no filter is active) */}
+      <ActiveFilterChips filters={filters} people={people} onChange={onChange} />
     </div>
   );
 }

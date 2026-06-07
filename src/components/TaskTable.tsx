@@ -5,16 +5,18 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import type { Task } from '../types';
+import type { Task, Person } from '../types';
 import type { SortField, SortDirection } from '../types';
+import type { TaskFormData } from './TaskForm';
 import { TaskRow } from './TaskRow';
 
 interface TaskTableProps {
   tasks: Task[];
+  people: Person[];
   sortField: SortField;
   sortDirection: SortDirection;
   onSort: (field: SortField) => void;
-  onEdit: (task: Task) => void;
+  onUpdateTask: (id: string, data: TaskFormData) => Promise<Task | null>;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
 }
@@ -44,14 +46,16 @@ function SortIcon({ field, sortField, sortDirection }: {
 
 export function TaskTable({
   tasks,
+  people,
   sortField,
   sortDirection,
   onSort,
-  onEdit,
+  onUpdateTask,
   onArchive,
   onRestore,
 }: TaskTableProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const table = useReactTable({
     data: tasks,
@@ -64,12 +68,27 @@ export function TaskTable({
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
+        // Collapsing the row also exits inline edit mode for that row.
+        if (editingId === id) setEditingId(null);
       } else {
         next.add(id);
       }
       return next;
     });
   };
+
+  // Pencil: expand the row (if needed) and switch it into inline edit mode.
+  const startEdit = (id: string) => {
+    setExpandedIds(prev => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setEditingId(id);
+  };
+
+  const stopEdit = () => setEditingId(null);
 
   const headerMap: Record<string, SortField> = {
     title: 'title',
@@ -141,9 +160,13 @@ export function TaskTable({
               <TaskRow
                 key={row.original.id}
                 row={row}
+                people={people}
                 isExpanded={expandedIds.has(row.original.id)}
+                isEditing={editingId === row.original.id}
                 onToggleExpand={() => toggleExpand(row.original.id)}
-                onEdit={onEdit}
+                onStartEdit={() => startEdit(row.original.id)}
+                onStopEdit={stopEdit}
+                onUpdateTask={onUpdateTask}
                 onArchive={onArchive}
                 onRestore={onRestore}
                 rowIndex={idx}

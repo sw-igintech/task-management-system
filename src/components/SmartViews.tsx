@@ -15,6 +15,7 @@ interface SmartView {
   label: string;
   icon: React.ReactNode;
   filters: Partial<TaskFilters>;
+  hint?: string;
 }
 
 const BASE_SMART_VIEWS: SmartView[] = [
@@ -22,6 +23,7 @@ const BASE_SMART_VIEWS: SmartView[] = [
     id: 'all-active',
     label: 'All Active',
     icon: <List size={14} />,
+    hint: 'Active tasks — excludes Done and archived. The total task count is shown in the filter bar.',
     filters: {
       status: 'all',
       priority: 'all',
@@ -112,6 +114,7 @@ export function SmartViews({ filters, people, onChange, taskCounts, onClose }: S
         <button
           key={view.id}
           onClick={() => applyView(view)}
+          title={view.hint}
           className={cn(
             'flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left w-full transition-colors',
             isActiveView(view)

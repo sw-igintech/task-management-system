@@ -1,15 +1,21 @@
+import { useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Archive, RotateCcw } from 'lucide-react';
 import type { Row } from '@tanstack/react-table';
-import type { Task } from '../types';
+import type { Task, Person } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
 import { formatDate, isOverdue, cn } from '../lib/utils';
 import { TaskExpandedView } from './TaskExpandedView';
+import { TaskForm, type TaskFormData } from './TaskForm';
 
 interface TaskRowProps {
   row: Row<Task>;
+  people: Person[];
   isExpanded: boolean;
+  isEditing: boolean;
   onToggleExpand: () => void;
-  onEdit: (task: Task) => void;
+  onStartEdit: () => void;
+  onStopEdit: () => void;
+  onUpdateTask: (id: string, data: TaskFormData) => Promise<Task | null>;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
   rowIndex: number;
@@ -17,15 +23,39 @@ interface TaskRowProps {
 
 export function TaskRow({
   row,
+  people,
   isExpanded,
+  isEditing,
   onToggleExpand,
-  onEdit,
+  onStartEdit,
+  onStopEdit,
+  onUpdateTask,
   onArchive,
   onRestore,
   rowIndex,
 }: TaskRowProps) {
   const task = row.original;
   const overdue = isOverdue(task);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleInlineSubmit = async (data: TaskFormData) => {
+    setSaving(true);
+    setSaveError(null);
+    const result = await onUpdateTask(task.id, data);
+    setSaving(false);
+    if (result) {
+      onStopEdit(); // success: exit edit mode, keep row expanded showing updated values
+    } else {
+      // Failure: keep edit mode + the user's input; surface the error.
+      setSaveError('Update failed — your changes were kept. Please try again.');
+    }
+  };
+
+  const handleCancel = () => {
+    setSaveError(null);
+    onStopEdit();
+  };
 
   return (
     <>
@@ -85,8 +115,13 @@ export function TaskRow({
         >
           <div className="flex items-center gap-1">
             <button
-              onClick={() => onEdit(task)}
-              className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
+              onClick={onStartEdit}
+              className={cn(
+                'p-1.5 rounded transition-colors',
+                isEditing
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-400 hover:bg-blue-50 hover:text-blue-600',
+              )}
               title="Edit task"
             >
               <Pencil size={13} />
@@ -112,11 +147,33 @@ export function TaskRow({
         </td>
       </tr>
 
-      {/* Expanded row */}
+      {/* Expanded row: inline edit form when editing, otherwise read-only details */}
       {isExpanded && (
         <tr>
           <td colSpan={7} className="p-0">
-            <TaskExpandedView task={task} />
+            {isEditing ? (
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Edit Task
+                  </p>
+                </div>
+                {saveError && (
+                  <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {saveError}
+                  </div>
+                )}
+                <TaskForm
+                  task={task}
+                  people={people}
+                  onSubmit={handleInlineSubmit}
+                  onCancel={handleCancel}
+                  isLoading={saving}
+                />
+              </div>
+            ) : (
+              <TaskExpandedView task={task} />
+            )}
           </td>
         </tr>
       )}
