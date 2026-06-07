@@ -25,9 +25,9 @@ const BASE_SMART_VIEWS: SmartView[] = [
     icon: <List size={14} />,
     hint: 'Active tasks — excludes Done and archived. The total task count is shown in the filter bar.',
     filters: {
-      status: 'all',
-      priority: 'all',
-      responsible_person_id: 'all',
+      statuses: [],
+      priorities: [],
+      personIds: [],
       overdue_only: false,
       due_this_week: false,
       show_archived: false,
@@ -49,19 +49,19 @@ const BASE_SMART_VIEWS: SmartView[] = [
     id: 'high-priority',
     label: 'High Priority',
     icon: <Flame size={14} className="text-red-600" />,
-    filters: { priority: 1, show_archived: false },
+    filters: { priorities: [1], show_archived: false },
   },
   {
     id: 'need-review',
     label: 'Need Review',
     icon: <Eye size={14} className="text-orange-500" />,
-    filters: { status: 'need_to_review', show_archived: false },
+    filters: { statuses: ['need_to_review'], show_archived: false },
   },
   {
     id: 'in-progress',
     label: 'In Progress',
     icon: <BarChart2 size={14} className="text-yellow-500" />,
-    filters: { status: 'in_progress', show_archived: false },
+    filters: { statuses: ['in_progress'], show_archived: false },
   },
 ];
 
@@ -76,9 +76,9 @@ interface SmartViewsProps {
 export function SmartViews({ filters, people, onChange, taskCounts, onClose }: SmartViewsProps) {
   const DEFAULT_FILTERS: TaskFilters = {
     search: '',
-    status: 'all',
-    priority: 'all',
-    responsible_person_id: 'all',
+    statuses: [],
+    priorities: [],
+    personIds: [],
     show_archived: false,
     overdue_only: false,
     due_this_week: false,
@@ -89,17 +89,23 @@ export function SmartViews({ filters, people, onChange, taskCounts, onClose }: S
     onClose?.();
   };
 
-  const isActiveView = (view: SmartView): boolean => {
-    for (const [k, v] of Object.entries(view.filters)) {
-      if (filters[k as keyof TaskFilters] !== v) return false;
+  // Compare filter values, treating arrays as unordered sets.
+  const valuesEqual = (a: unknown, b: unknown): boolean => {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      const setB = new Set(b);
+      return a.every(x => setB.has(x));
     }
-    return true;
+    return a === b;
   };
+
+  const isActiveView = (view: SmartView): boolean =>
+    Object.entries(view.filters).every(([k, v]) => valuesEqual(filters[k as keyof TaskFilters], v));
 
   const applyPersonFilter = (personId: string) => {
     onChange({
       ...DEFAULT_FILTERS,
-      responsible_person_id: personId,
+      personIds: [personId],
     });
     onClose?.();
   };
@@ -144,9 +150,10 @@ export function SmartViews({ filters, people, onChange, taskCounts, onClose }: S
             </p>
           </div>
           {people.map(person => {
-            const isActive = filters.responsible_person_id === person.id &&
-              filters.status === 'all' &&
-              filters.priority === 'all' &&
+            const isActive = filters.personIds.length === 1 &&
+              filters.personIds[0] === person.id &&
+              filters.statuses.length === 0 &&
+              filters.priorities.length === 0 &&
               !filters.overdue_only &&
               !filters.due_this_week;
             return (

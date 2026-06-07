@@ -179,7 +179,7 @@ See `docs/import-tasks.md` for the full operator guide.
 
 ---
 
-## 8. UI: Counts, Active-Filter Chips, Inline Editing
+## 8. UI: Counts, Filters (multi-select), Active-Filter Chips, Inline Editing
 
 ### Task-count verification (canonical status: `need_to_review`)
 - **`need_review` vs `need_to_review`:** the entire project — `types/index.ts`, `lib/utils.ts` (labels + badge map + `statusFromRaw`), `lib/storage.ts`, `SmartViews.tsx`, `TasksPage.tsx`, `TaskForm.tsx` zod enum, `supabase/schema.sql` CHECK, and the importer — uses **`need_to_review`**. The Supabase DB also contains only `need_to_review`. There is **no** `need_review` anywhere. Canonical value = **`need_to_review`**. No migration was needed.
@@ -188,7 +188,14 @@ See `docs/import-tasks.md` for the full operator guide.
 
 ### Active-filter chips — `src/components/ActiveFilterChips.tsx`
 - Rendered inside `FilterBar` (bottom of the filter card). Returns `null` (no space) when no filter is active.
-- One chip per active filter: Search, Status, Priority, Person, Overdue only, Due this week, Show archived. Each chip has an X that resets just that filter; a **Clear all** button resets everything. Uses existing `filters` state + `onChange`. Wraps with `flex-wrap` for mobile.
+- **One chip per selected value** (since multi-select): every selected Status / Priority / Person gets its own removable chip, plus Search / Overdue only / Due this week / Show archived. Each chip's X removes just that value (removing the last value in a category returns it to "all"). **Clear all** resets everything. Wraps with `flex-wrap` for mobile.
+
+### Multi-select filters — `TaskFilters` shape + `MultiSelectDropdown`
+- **`TaskFilters` changed** (`src/types/index.ts`): the single-value fields `status: TaskStatus|'all'`, `priority: PriorityLevel|'all'`, `responsible_person_id: string|'all'` were replaced by arrays **`statuses: TaskStatus[]`, `priorities: PriorityLevel[]`, `personIds: string[]`**. `search`, `show_archived`, `overdue_only`, `due_this_week` are unchanged.
+- **Semantics:** empty array = **no filter / all** (preserves old behavior). Non-empty = filter by those values. **OR within a category, AND across categories** — implemented in `storage.getFilteredTasks` (`statuses.includes(task.status)` etc.; a task with no `responsible_person_id` is excluded when `personIds` is non-empty).
+- **`MultiSelectDropdown` (`src/components/MultiSelectDropdown.tsx`)** replaces the three native `<select>`s in `FilterBar`. Checkbox-style menu: each option shows a ✓ when selected; clicking toggles and keeps the menu open; closes on outside click or **Escape**. Button label summarizes selection: `All Statuses` / `1 Status` / `3 Statuses` (and the Priority/People equivalents).
+- **"All" row** at the top of each menu: shows ✓ when every option is selected, a `–` (indeterminate) when some-but-not-all are selected, nothing when empty. Clicking it selects all values; clicking again when all are selected clears back to the neutral/all state. Flow for "everything except Done": open Status → click All → uncheck Done.
+- **Consumers updated:** `useTasks` `DEFAULT_FILTERS`, `FilterBar` (dropdowns + `hasActiveFilters` + clear), `ActiveFilterChips`, `SmartViews` (view defs + array-aware `isActiveView` + By-Person active check), `Dashboard` stat-card click handlers (`{statuses:[]}`, `{priorities:[1]}`). `App.switchToTasksWithFilters` / `DashboardPage` are unchanged (they pass `Partial<TaskFilters>` through). See `docs/filtering.md`.
 
 ### Inline expanded-row editing (replaces the Edit modal)
 - The **pencil** icon no longer opens a modal. It expands the row (if collapsed) and switches the expanded area into an inline `TaskForm` (reused as-is) with **Cancel** / **Update Task** buttons.

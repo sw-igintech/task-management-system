@@ -30,9 +30,11 @@ export interface Task {
 
 export interface TaskFilters {
   search: string;
-  status: TaskStatus | 'all';
-  priority: PriorityLevel | 'all';
-  responsible_person_id: string | 'all';
+  // Multi-select filters. Empty array = no filter / all values (OR within a
+  // category, AND across categories).
+  statuses: TaskStatus[];
+  priorities: PriorityLevel[];
+  personIds: string[];
   show_archived: boolean;
   overdue_only: boolean;
   due_this_week: boolean;

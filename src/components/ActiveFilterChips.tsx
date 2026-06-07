@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import type { TaskFilters, Person } from '../types';
+import type { TaskFilters, Person, TaskStatus, PriorityLevel } from '../types';
 import { STATUS_LABELS, PRIORITY_LABELS } from '../lib/utils';
 
 interface ActiveFilterChipsProps {
@@ -16,6 +16,7 @@ interface Chip {
 
 /**
  * Row of removable chips showing which filters are currently active.
+ * One chip per selected value, so a single value can be removed directly.
  * Renders nothing (and takes no space) when no filter is active.
  */
 export function ActiveFilterChips({ filters, people, onChange }: ActiveFilterChipsProps) {
@@ -26,16 +27,33 @@ export function ActiveFilterChips({ filters, people, onChange }: ActiveFilterChi
   if (filters.search.trim() !== '') {
     chips.push({ key: 'search', label: `Search: "${filters.search}"`, patch: { search: '' } });
   }
-  if (filters.status !== 'all') {
-    chips.push({ key: 'status', label: `Status: ${STATUS_LABELS[filters.status]}`, patch: { status: 'all' } });
-  }
-  if (filters.priority !== 'all') {
-    chips.push({ key: 'priority', label: `Priority: ${PRIORITY_LABELS[filters.priority]}`, patch: { priority: 'all' } });
-  }
-  if (filters.responsible_person_id !== 'all') {
-    const name = people.find(p => p.id === filters.responsible_person_id)?.name ?? 'Unknown';
-    chips.push({ key: 'person', label: `Person: ${name}`, patch: { responsible_person_id: 'all' } });
-  }
+
+  // One chip per selected status — removing it drops just that value.
+  filters.statuses.forEach((status: TaskStatus) => {
+    chips.push({
+      key: `status:${status}`,
+      label: `Status: ${STATUS_LABELS[status]}`,
+      patch: { statuses: filters.statuses.filter(s => s !== status) },
+    });
+  });
+
+  filters.priorities.forEach((priority: PriorityLevel) => {
+    chips.push({
+      key: `priority:${priority}`,
+      label: `Priority: ${PRIORITY_LABELS[priority]}`,
+      patch: { priorities: filters.priorities.filter(p => p !== priority) },
+    });
+  });
+
+  filters.personIds.forEach(personId => {
+    const name = people.find(p => p.id === personId)?.name ?? 'Unknown';
+    chips.push({
+      key: `person:${personId}`,
+      label: `Person: ${name}`,
+      patch: { personIds: filters.personIds.filter(id => id !== personId) },
+    });
+  });
+
   if (filters.overdue_only) {
     chips.push({ key: 'overdue', label: 'Overdue only', patch: { overdue_only: false } });
   }
@@ -51,9 +69,9 @@ export function ActiveFilterChips({ filters, people, onChange }: ActiveFilterChi
   const clearAll = () =>
     onChange({
       search: '',
-      status: 'all',
-      priority: 'all',
-      responsible_person_id: 'all',
+      statuses: [],
+      priorities: [],
+      personIds: [],
       show_archived: false,
       overdue_only: false,
       due_this_week: false,

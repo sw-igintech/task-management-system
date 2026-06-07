@@ -120,9 +120,13 @@ export function getFilteredTasks(
       if (!matchTitle && !matchNotes && !matchPerson) return false;
     }
 
-    if (filters.status !== 'all' && task.status !== filters.status) return false;
-    if (filters.priority !== 'all' && task.priority !== filters.priority) return false;
-    if (filters.responsible_person_id !== 'all' && task.responsible_person_id !== filters.responsible_person_id) return false;
+    // Multi-select categories: empty array = no filter. OR within a category.
+    if (filters.statuses.length > 0 && !filters.statuses.includes(task.status)) return false;
+    if (filters.priorities.length > 0 && !filters.priorities.includes(task.priority)) return false;
+    if (
+      filters.personIds.length > 0 &&
+      !(task.responsible_person_id && filters.personIds.includes(task.responsible_person_id))
+    ) return false;
     if (filters.overdue_only && !isOverdue(task)) return false;
     if (filters.due_this_week && !isDueThisWeek(task)) return false;
 

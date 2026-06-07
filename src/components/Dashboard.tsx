@@ -66,7 +66,7 @@ export function Dashboard({ stats, onFilterChange }: DashboardProps) {
             icon={<Clock size={22} className="text-blue-600" />}
             color="text-blue-600"
             bgColor="bg-blue-50"
-            onClick={() => onFilterChange?.({ status: 'all', show_archived: false, overdue_only: false, due_this_week: false })}
+            onClick={() => onFilterChange?.({ statuses: [], show_archived: false, overdue_only: false, due_this_week: false })}
           />
           <StatCard
             label="Overdue"
@@ -90,7 +90,7 @@ export function Dashboard({ stats, onFilterChange }: DashboardProps) {
             icon={<Flame size={22} className="text-rose-600" />}
             color="text-rose-600"
             bgColor="bg-rose-50"
-            onClick={() => onFilterChange?.({ priority: 1, show_archived: false })}
+            onClick={() => onFilterChange?.({ priorities: [1], show_archived: false })}
           />
         </div>
       </div>

@@ -5,9 +5,9 @@ import * as storage from '../lib/storage';
 
 const DEFAULT_FILTERS: TaskFilters = {
   search: '',
-  status: 'all',
-  priority: 'all',
-  responsible_person_id: 'all',
+  statuses: [],
+  priorities: [],
+  personIds: [],
   show_archived: false,
   overdue_only: false,
   due_this_week: false,
