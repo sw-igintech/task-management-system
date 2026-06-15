@@ -122,7 +122,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 6. **Vercel deployment** — Completed at the production URL above; auto-deploys from `main`.
 7. **Mobile Smart Views drawer** — Collapsible Smart Views sidebar added for mobile; desktop layout unchanged.
 8. **CSV task replacement** — Old task data replaced with `New Engineering Tasks - 2026 - Engineering Tasks.csv` via a new safe import workflow (`scripts/import_excel_tasks.ts`). The `claude/` context folder was renamed to `docs/`. See section 6.
-9. **Filters + inline editing (this task)** — Added an active-filter-chips row and moved task editing from a modal to inline expanded-row editing. Verified the post-import counts/statuses. See section 8.
+9. **Filters + inline editing** — Added an active-filter-chips row and moved task editing from a modal to inline expanded-row editing. Verified the post-import counts/statuses. See section 8.
+10. **CSV verification / additive sync (this task)** — Added a non-destructive sync workflow (`scripts/sync_csv_tasks.ts`, `npm run sync:tasks`) that reconciles the CSV against Supabase: inserts missing tasks, updates deterministically-matched changed tasks, creates missing people, and **never deletes** (extras are reported only). See section 9 and `docs/sync-tasks.md`.
 
 ---
 
@@ -167,13 +168,39 @@ npm run import:tasks -- --file "New Engineering Tasks - 2026 - Engineering Tasks
 
 See `docs/import-tasks.md` for the full operator guide.
 
+### CSV verification / additive sync (non-destructive)
+
+**Script:** `scripts/sync_csv_tasks.ts` · **Commands:**
+
+```bash
+npm run sync:tasks -- --file "New Engineering Tasks - 2026 - Engineering Tasks.csv" --dry-run
+npm run sync:tasks -- --file "New Engineering Tasks - 2026 - Engineering Tasks.csv" --apply
+```
+
+Unlike the import script (destructive delete + re-insert), **sync is additive**:
+
+- **Inserts** tasks missing from the DB; **updates** existing tasks only on a
+  deterministic match where a field differs; **creates** missing people (then assigns).
+- **Never deletes.** DB tasks absent from the CSV are reported as `extra_in_db` only.
+- **Matching strategy** (first hit wins): (1) `sync_id` stored in `source_raw_text`,
+  (2) `import_hash` = `sha256(title|responsible|due|notes)` (same formula as the
+  importer), (3) `title + responsible` only when unique on both sides; else
+  `ambiguous_match` and left untouched.
+- **Duplicates** are collapsed by `import_hash` (the DB's `UNIQUE` key); copies that
+  differ only in status/priority are reported as conflicting duplicates (first wins).
+- **`--dry-run`** never writes; **`--apply`** backs up to `backups/tasks-before-sync-*.json`
+  and `backups/people-before-sync-*.json` first. Both modes write a timestamped JSON
+  report to `reports/` (gitignored).
+
+See `docs/sync-tasks.md` for the full operator guide, field mapping, and restore steps.
+
 ---
 
 ## 7. Current Status
 
 - **Build:** `npm run build` passes (0 TypeScript errors). `npm run build` runs `tsc -b` so it doubles as the typecheck (no separate `typecheck` script).
 - **Lint:** `npm run lint` reports **pre-existing** problems only (2 errors + 2 warnings), all in files unrelated to recent work: `useTasks.ts` (`react-hooks/set-state-in-effect`) and `TaskForm.tsx` (`no-explicit-any` on the zodResolver cast). `TaskTable.tsx` has a pre-existing TanStack `incompatible-library` **warning**. The import script and the new UI files lint clean.
-- **DB:** 128 tasks, 5 people. `archived` = 0. Status counts: done=59, not_started=36, in_progress=21, on_hold=7, need_to_review=5.
+- **DB:** 137 tasks, 5 people (after the 2026-06-15 CSV sync: inserted 9, updated 16, nothing deleted). `archived` = 0. Status counts: done=62, not_started=37, in_progress=22, on_hold=12, need_to_review=4. 2 tasks unassigned. (3 CSV rows are duplicates collapsed by `import_hash`, so 137 DB = 140 CSV rows − 3 dups; a re-run dry-run reports all 137 `already_correct`.)
 - **Deployed:** Vercel auto-deploys from `main`.
 - **Possible follow-ups:** add Supabase Auth (RLS currently permissive); 2 tasks have no responsible person (stored as unassigned); consider code-splitting the >500 kB bundle.
 

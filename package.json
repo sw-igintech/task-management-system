@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "import:tasks": "tsx scripts/import_excel_tasks.ts"
+    "import:tasks": "tsx scripts/import_excel_tasks.ts",
+    "sync:tasks": "tsx scripts/sync_csv_tasks.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
