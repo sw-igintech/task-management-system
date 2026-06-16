@@ -234,6 +234,31 @@ See `docs/sync-tasks.md` for the full operator guide, field mapping, and restore
 
 ---
 
+## 9c. Automatic dated text traceability (Notes & Description)
+
+When the user starts typing in the **Notes** or **Description** textarea, the app
+auto-inserts today's date as a plain-text prefix at the cursor, before the first typed
+character. Lives in `src/components/TaskForm.tsx`, so it works identically in the Add Task
+modal and the inline expanded-row editor. **Applies to both Notes and Description.**
+
+- **Format:** `(DD.MM.YY) ` — parentheses + 2-digit day.month.year + one trailing space
+  (e.g. `2026-06-17` → `(17.06.26) `). Built by `formatTraceDate(new Date())`.
+- **Plain editable text** — saved inline inside the existing `notes`/`description` text.
+  **Not** a DB column, not a locked component, not stored separately. No schema/migration.
+- **Not mandatory** — the user can delete/edit/ignore it; nothing validates it; it is not
+  required for saving and is **not re-inserted** if deleted within the same interaction.
+- **Inserted once per focus interaction** (a per-field flag reset on `focus`), on the first
+  printable keystroke — never repeated per keystroke. Re-focusing for a new edit inserts a
+  fresh dated line.
+- **Trigger:** single printable chars only (keydown, `e.key.length === 1`) + first paste.
+  Ignored: Enter-alone (newline), Backspace/Delete, arrows/Home/End/PageUp-Down, Tab/Esc,
+  modifiers, and Ctrl/Cmd/Alt shortcuts. IME/composition (incl. CJK / dead keys) is skipped
+  so Hebrew/English direct typing works; the prefix sits on its own line unless at start of
+  field or right after a newline. Selected text is replaced by `prefix + typed char`.
+- Full details, edge-case table, and the IME limitation: see `docs/task-text-traceability.md`.
+
+---
+
 ## 9b. "Opened by" field (who opened/requested the task)
 
 ### What it is
