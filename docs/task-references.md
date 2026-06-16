@@ -44,6 +44,27 @@ blocked by @123, see also @TASK-45
   `name@123.com` is *not* turned into a link. (A reference must start on its own, e.g. after a
   space or at the start of the line.)
 
+## Autocomplete while typing `@` (editing helper)
+
+While editing **Notes** or **Description** (Add Task modal *and* inline edit), typing `@`
+opens a suggestion popup below the textarea — like @-mentioning a person in Slack/Notion.
+
+- **Trigger:** `@` at the start of the field or after a separator (space, newline, `(` `[`
+  `{` `:` `,`). It is **not** triggered mid-word, so emails (`name@example.com`) never open it.
+- **Filtering:** keep typing digits — `@13` filters to task numbers that *start with* `13`
+  (`TASK-13`, `TASK-130`, `TASK-131`, `TASK-139`, …). `@TASK-13` / `@task-13` work too. With
+  just `@` (empty query) it shows the most recent tasks (highest numbers), max 8.
+- Each suggestion shows the **`TASK-<n>`** key, the **title**, and a **status** badge. Only
+  tasks that have a `task_number` appear.
+- **Keyboard:** `↓`/`↑` move the highlight, `Enter` or `Tab` selects, `Esc` closes. **Mouse:**
+  click a suggestion to select; clicking outside (blur) closes it.
+- **What gets inserted:** the current `@…` token is replaced with a clean **`@<number>`** plus
+  a trailing space (e.g. selecting TASK-139 turns `@13` into `@139 `). The cursor lands right
+  after it and focus stays in the textarea. The saved text is **still plain text** — no rich
+  object, no DB column. The read-only renderer linkifies `@139` later (see above).
+- **Works with the dated prefix:** if `@` is your first character, the auto prefix still fires
+  first → `(DD.MM.YY) @`, and the popup opens as you type digits → `(DD.MM.YY) @139`.
+
 ## What happens when you click a reference
 
 1. Resolve the number → task (via the `task_number → task` map built in `TasksPage`).

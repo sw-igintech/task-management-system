@@ -280,6 +280,18 @@ Human-readable task keys plus `@number` cross-task links. Full guide:
   state), then expands + scrolls + briefly highlights the target row (`TaskTable.openTask`
   imperative handle; rows carry `data-task-id`/`data-task-number`). Unknown numbers render as
   subtle plain text and never crash.
+- **Mention autocomplete (editing helper):** while editing Notes/Description, typing `@` opens
+  a suggestion popup (`src/components/MentionSuggestions.tsx`, logic in `TaskForm`). Trigger:
+  `@` at start or after a separator (space/newline/`([{:,`) — never mid-word, so emails don't
+  trigger it. Typing digits filters task numbers by **prefix** (`@13` → TASK-13/130/131/139…);
+  empty query shows the most-recent numbers (max 8); each row shows key + title + status; only
+  tasks with a `task_number` appear. Keyboard: `↓`/`↑` highlight, `Enter`/`Tab` select, `Esc`
+  close; mouse click selects, outside-click/blur closes. Selecting **inserts plain `@<number>`
+  + trailing space** (replaces the typed token) via RHF `setValue` — **no DB column, no rich
+  object**; the rendering model above is unchanged. Works alongside the dated prefix (`@` as
+  the first char → `(DD.MM.YY) @`, then the popup filters as digits are typed). Suggestion
+  source is the full loaded task list threaded `TasksPage → TaskTable → TaskRow → TaskForm`
+  (and directly to the Add-Task modal) as `mentionTasks` — no per-keystroke Supabase query.
 - **Mock mode:** seed tasks get `TASK-1…TASK-63`; new mock tasks get `max + 1`. Search/links
   work in mock mode.
 - **Import/sync scripts:** unchanged. They never send `task_number`; the DB default assigns it

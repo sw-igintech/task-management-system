@@ -213,6 +213,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
           onRestore={restoreTask}
           getTaskByNumber={getTaskByNumber}
           onTaskReference={handleTaskReference}
+          mentionTasks={tasks}
         />
       </div>
 
@@ -226,6 +227,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
           people={people}
           onSubmit={handleAddTask}
           onCancel={() => setAddModalOpen(false)}
+          mentionTasks={tasks}
         />
       </Modal>
     </div>

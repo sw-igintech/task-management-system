@@ -27,6 +27,9 @@ interface TaskTableProps {
   onRestore: (id: string) => void;
   getTaskByNumber: (n: number) => Task | undefined;
   onTaskReference: (n: number) => void;
+  // Full task list used as the source for @-mention autocomplete (not the filtered
+  // view), so a reference can be picked even to a task hidden by current filters.
+  mentionTasks: Task[];
 }
 
 const columns: ColumnDef<Task>[] = [
@@ -64,6 +67,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
   onRestore,
   getTaskByNumber,
   onTaskReference,
+  mentionTasks,
 }: TaskTableProps, ref) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -207,6 +211,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
                 onRestore={onRestore}
                 getTaskByNumber={getTaskByNumber}
                 onTaskReference={onTaskReference}
+                mentionTasks={mentionTasks}
                 rowIndex={idx}
               />
             ))}

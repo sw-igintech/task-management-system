@@ -21,6 +21,7 @@ interface TaskRowProps {
   onRestore: (id: string) => void;
   getTaskByNumber: (n: number) => Task | undefined;
   onTaskReference: (n: number) => void;
+  mentionTasks: Task[];
   rowIndex: number;
 }
 
@@ -38,6 +39,7 @@ export function TaskRow({
   onRestore,
   getTaskByNumber,
   onTaskReference,
+  mentionTasks,
   rowIndex,
 }: TaskRowProps) {
   const task = row.original;
@@ -185,6 +187,7 @@ export function TaskRow({
                   onSubmit={handleInlineSubmit}
                   onCancel={handleCancel}
                   isLoading={saving}
+                  mentionTasks={mentionTasks}
                 />
               </div>
             ) : (
