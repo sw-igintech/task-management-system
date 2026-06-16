@@ -174,16 +174,17 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     }
   };
 
-  // Replace the active mention token with a clean "@<number> " reference. The active
-  // textarea is the focused element (suggestion clicks use mousedown-preventDefault,
-  // so focus stays put) — avoids holding a React ref read during render.
+  // Replace the active mention token with a clean "@TASK-<number> " reference (the
+  // read-only renderer accepts @123, @TASK-123 and @task-123, so older @123 notes
+  // still link). The active textarea is the focused element (suggestion clicks use
+  // mousedown-preventDefault, so focus stays put) — avoids a React ref read in render.
   const selectSuggestion = (taskToRef: Task) => {
     const el = document.activeElement;
     if (!mention || taskToRef.task_number == null) return;
     if (!(el instanceof HTMLTextAreaElement) || el.name !== mention.field) return;
     const value = el.value;
     const rest = value.slice(mention.end);
-    const insert = `@${taskToRef.task_number}` + (rest.startsWith(' ') ? '' : ' ');
+    const insert = `@TASK-${taskToRef.task_number}` + (rest.startsWith(' ') ? '' : ' ');
     const newValue = value.slice(0, mention.start) + insert + rest;
     setValue(mention.field, newValue, { shouldDirty: true, shouldTouch: true });
     const caret = mention.start + insert.length;

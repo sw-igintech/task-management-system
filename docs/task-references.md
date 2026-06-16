@@ -39,7 +39,8 @@ blocked by @123, see also @TASK-45
 - The **raw text is stored exactly as typed** (`@123`) — nothing is rewritten on save, so the
   text stays editable and never corrupts. Linkification happens only at **render time** in the
   read-only expanded view (`TaskTextWithLinks`).
-- Accepted reference forms: `@123`, `@TASK-123`, `@task-123` (case-insensitive).
+- Accepted reference forms: `@123`, `@TASK-123`, `@task-123` (case-insensitive) — all resolve
+  to the same task number and render identically. Typing any of them manually works.
 - **Emails are safe:** the matcher ignores an `@` that is preceded by a word character, so
   `name@123.com` is *not* turned into a link. (A reference must start on its own, e.g. after a
   space or at the start of the line.)
@@ -58,10 +59,11 @@ opens a suggestion popup below the textarea — like @-mentioning a person in Sl
   tasks that have a `task_number` appear.
 - **Keyboard:** `↓`/`↑` move the highlight, `Enter` or `Tab` selects, `Esc` closes. **Mouse:**
   click a suggestion to select; clicking outside (blur) closes it.
-- **What gets inserted:** the current `@…` token is replaced with a clean **`@<number>`** plus
-  a trailing space (e.g. selecting TASK-139 turns `@13` into `@139 `). The cursor lands right
-  after it and focus stays in the textarea. The saved text is **still plain text** — no rich
-  object, no DB column. The read-only renderer linkifies `@139` later (see above).
+- **What gets inserted:** the current `@…` token is replaced with a clean **`@TASK-<number>`**
+  plus a trailing space (e.g. selecting TASK-139 turns `@13` into `@TASK-139 `). The cursor
+  lands right after it and focus stays in the textarea. The saved text is **still plain text**
+  — no rich object, no markdown/HTML, no DB column. The read-only renderer linkifies it later
+  (see above). Notes saved earlier with the bare `@139` form still render and link unchanged.
 - **Works with the dated prefix:** if `@` is your first character, the auto prefix still fires
   first → `(DD.MM.YY) @`, and the popup opens as you type digits → `(DD.MM.YY) @139`.
 

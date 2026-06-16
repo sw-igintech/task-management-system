@@ -102,10 +102,15 @@ export function SmartViews({ filters, people, onChange, taskCounts, onClose }: S
   const isActiveView = (view: SmartView): boolean =>
     Object.entries(view.filters).every(([k, v]) => valuesEqual(filters[k as keyof TaskFilters], v));
 
+  // Toggle a person in the multi-select person filter WITHOUT touching any other
+  // active filter (statuses/priorities/search/overdue/due-this-week/show_archived).
+  // Add the person if not selected, remove if already selected.
   const applyPersonFilter = (personId: string) => {
     onChange({
-      ...DEFAULT_FILTERS,
-      personIds: [personId],
+      ...filters,
+      personIds: filters.personIds.includes(personId)
+        ? filters.personIds.filter(id => id !== personId)
+        : [...filters.personIds, personId],
     });
     onClose?.();
   };
@@ -150,12 +155,9 @@ export function SmartViews({ filters, people, onChange, taskCounts, onClose }: S
             </p>
           </div>
           {people.map(person => {
-            const isActive = filters.personIds.length === 1 &&
-              filters.personIds[0] === person.id &&
-              filters.statuses.length === 0 &&
-              filters.priorities.length === 0 &&
-              !filters.overdue_only &&
-              !filters.due_this_week;
+            // Highlight every selected person (multi-select), regardless of other
+            // active filters — consistent with the toggle/merge behavior above.
+            const isActive = filters.personIds.includes(person.id);
             return (
               <button
                 key={person.id}

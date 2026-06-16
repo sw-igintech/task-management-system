@@ -286,12 +286,20 @@ Human-readable task keys plus `@number` cross-task links. Full guide:
   trigger it. Typing digits filters task numbers by **prefix** (`@13` → TASK-13/130/131/139…);
   empty query shows the most-recent numbers (max 8); each row shows key + title + status; only
   tasks with a `task_number` appear. Keyboard: `↓`/`↑` highlight, `Enter`/`Tab` select, `Esc`
-  close; mouse click selects, outside-click/blur closes. Selecting **inserts plain `@<number>`
-  + trailing space** (replaces the typed token) via RHF `setValue` — **no DB column, no rich
-  object**; the rendering model above is unchanged. Works alongside the dated prefix (`@` as
-  the first char → `(DD.MM.YY) @`, then the popup filters as digits are typed). Suggestion
-  source is the full loaded task list threaded `TasksPage → TaskTable → TaskRow → TaskForm`
-  (and directly to the Add-Task modal) as `mentionTasks` — no per-keystroke Supabase query.
+  close; mouse click selects, outside-click/blur closes. Selecting **inserts plain
+  `@TASK-<number>` + trailing space** (replaces the typed token) via RHF `setValue` — **no DB
+  column, no rich object/markdown/HTML**. The renderer accepts `@123`, `@TASK-123` and
+  `@task-123` interchangeably, so older notes saved with the bare `@123` form still link. Works
+  alongside the dated prefix (`@` as the first char → `(DD.MM.YY) @`, then the popup filters as
+  digits are typed). Suggestion source is the full loaded task list threaded
+  `TasksPage → TaskTable → TaskRow → TaskForm` (and directly to the Add-Task modal) as
+  `mentionTasks` — no per-keystroke Supabase query.
+- **BY PERSON sidebar merges with current filters (2026-06-17):** clicking a person under
+  Smart Views → BY PERSON now **toggles** that person in `personIds` while preserving every
+  other active filter (statuses/priorities/search/overdue/due-this-week/show_archived) — it no
+  longer resets to a clean view. The top Smart Views (All Active/Overdue/etc.) still replace the
+  whole filter set by design. A person row is highlighted whenever it is in `personIds`. See
+  `docs/filtering.md`.
 - **Mock mode:** seed tasks get `TASK-1…TASK-63`; new mock tasks get `max + 1`. Search/links
   work in mock mode.
 - **Import/sync scripts:** unchanged. They never send `task_number`; the DB default assigns it

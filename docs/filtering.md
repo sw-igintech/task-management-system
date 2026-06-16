@@ -59,6 +59,10 @@ Each view sets the array shape:
 | High Priority | `priorities: [1]` |
 | Need Review | `statuses: ['need_to_review']` |
 | In Progress | `statuses: ['in_progress']` |
-| By Person | `personIds: [person.id]` |
+| By Person | **merges**: toggles `person.id` in the current `personIds`, preserving all other filters |
 
-Active-state highlighting uses an array-aware (set) comparison. The sidebar count badges are computed from the task list in `TasksPage` (unchanged).
+**Smart Views (top section)** replace the whole filter set (`DEFAULT_FILTERS + view.filters`) — that's the intended "jump to this view" behavior.
+
+**By Person is different — it merges, it does not reset.** Clicking a person under BY PERSON keeps every other active filter (statuses / priorities / search / overdue / due-this-week / show_archived) and only updates `personIds`: it **adds** the person if not selected, or **removes** them if already selected (multi-select toggle). So applying top filters first and *then* clicking a person now keeps both (previously the person click reset everything). A person row is highlighted whenever it is in `personIds` (regardless of other active filters).
+
+Active-state highlighting for the top views uses an array-aware (set) comparison. The sidebar count badges are computed from the task list in `TasksPage` (unchanged).
