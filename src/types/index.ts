@@ -17,6 +17,10 @@ export interface Task {
   priority: PriorityLevel;
   responsible_person_id?: string;
   responsible_person?: Person;
+  // "Opened by" = who opened/requested the task (distinct from the responsible
+  // person above). FK to people; computed `opened_by_person` is a client-side join.
+  opened_by_person_id?: string | null;
+  opened_by_person?: Person | null;
   due_date?: string | null;
   type?: string;
   source_file?: string;

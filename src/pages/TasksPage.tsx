@@ -45,20 +45,13 @@ export function TasksPage({ hookData }: TasksPageProps) {
     'in-progress': activeTasks.filter(t => t.status === 'in_progress').length,
   };
 
-  const handleAddTask = (data: {
-    title: string;
-    status: Task['status'];
-    priority: number;
-    responsible_person_id?: string;
-    due_date?: string | null;
-    notes?: string;
-    description?: string;
-  }) => {
+  const handleAddTask = (data: TaskFormData) => {
     addTask({
       title: data.title,
       status: data.status,
       priority: data.priority as Task['priority'],
       responsible_person_id: data.responsible_person_id || undefined,
+      opened_by_person_id: data.opened_by_person_id,
       due_date: data.due_date || null,
       notes: data.notes,
       description: data.description,
@@ -73,6 +66,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
       status: data.status,
       priority: data.priority as Task['priority'],
       responsible_person_id: data.responsible_person_id || undefined,
+      opened_by_person_id: data.opened_by_person_id,
       due_date: data.due_date || null,
       notes: data.notes,
       description: data.description,

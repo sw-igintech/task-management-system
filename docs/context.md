@@ -92,7 +92,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 | `notes` | TEXT | nullable |
 | `status` | TEXT | enum (CHECK): `not_started`, `in_progress`, `on_hold`, `need_to_review`, `done` |
 | `priority` | INTEGER | 1 (High) – 5 (Low), CHECK BETWEEN 1 AND 5 |
-| `responsible_person_id` | UUID FK → people.id | ON DELETE SET NULL, **nullable** |
+| `responsible_person_id` | UUID FK → people.id | ON DELETE SET NULL, **nullable** — who owns/performs the task (Assigned to) |
+| `opened_by_person_id` | UUID FK → people.id | ON DELETE SET NULL, **nullable** — who opened/requested the task (Opened by). App-required for new/edited tasks; see §10 |
 | `due_date` | DATE | nullable |
 | `type` | TEXT | optional |
 | `source_file` | TEXT | origin filename |
@@ -107,8 +108,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 
 ### DB ↔ Frontend mapping
 - All columns are snake_case in DB **and** TypeScript types.
-- `responsible_person` on the `Task` type is a **computed client-side join**, not a DB column.
-- `useTasks.ts` fetches people + tasks in parallel and joins via `joinPerson()`; `toDbPayload()` strips `responsible_person`, `id`, `created_at`, `updated_at` before writes.
+- `responsible_person` and `opened_by_person` on the `Task` type are **computed client-side joins**, not DB columns.
+- `useTasks.ts` fetches people + tasks in parallel and joins via `joinPerson()` (which resolves **both** `responsible_person_id` → `responsible_person` **and** `opened_by_person_id` → `opened_by_person` from the same people map — two separate FKs to `people`, never an ambiguous embedded join); `toDbPayload()` strips `responsible_person`, `opened_by_person`, `id`, `created_at`, `updated_at` before writes.
 
 ---
 
@@ -229,4 +230,63 @@ See `docs/sync-tasks.md` for the full operator guide, field mapping, and restore
 - Edit state lives in `TaskTable` (`editingId`); per-row saving/error state lives in `TaskRow`. Save goes through the existing `updateTask` (`TasksPage.handleUpdateTask` → `useTasks.updateTask`) — same path as before, returns `Task | null`.
 - Success → exit edit mode, row stays expanded showing updated values. Failure → stays in edit mode, **keeps the user's input**, shows an inline error. Cancel → exits edit mode (RHF discards changes).
 - Clicking the pencil while collapsed opens the row directly in edit mode. Clicking the row still toggles expand/collapse (collapsing also exits edit mode). **Add Task remains a modal** — only editing moved inline.
-- Editable fields: title, description, notes, status, priority, responsible person, due date (same set as the old modal; `type` is not edited because the form never supported it).
+- Editable fields: title, description, notes, status, priority, responsible person, **opened by**, due date (same set as the old modal plus Opened by; `type` is not edited because the form never supported it).
+
+---
+
+## 9b. "Opened by" field (who opened/requested the task)
+
+### What it is
+A second person relationship on each task, **distinct from "Assigned to"**:
+- **Assigned to** = `responsible_person_id` → who owns/performs the task.
+- **Opened by** = `opened_by_person_id` → who opened/created/requested the task.
+
+Values come **only** from the existing `people` table (a dropdown, no free text).
+
+### DB column
+- `tasks.opened_by_person_id UUID REFERENCES people(id) ON DELETE SET NULL` — **nullable**.
+- Index: `idx_tasks_opened_by_person_id`.
+- Name chosen to mirror the existing `responsible_person_id` (snake_case in both DB and TS).
+- Defined in `supabase/schema.sql`; migration in `supabase/add_opened_by_to_tasks.sql`.
+
+### Migration / apply instructions
+The column is **nullable on purpose** — existing/imported tasks have no value and a
+`NOT NULL` constraint would break them. "Required" is enforced in the **app layer**, not the DB.
+
+**Apply status: NOT applied automatically.** DDL (`ALTER TABLE`) cannot run through the
+Supabase anon key / PostgREST from the app, and no `service_role` key is configured. You
+must run it manually:
+1. Open the Supabase project → **SQL Editor**.
+2. Paste the contents of `supabase/add_opened_by_to_tasks.sql` and **Run** (it is idempotent —
+   `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`).
+3. After it runs, **Add Task** and inline edit will persist `opened_by_person_id`.
+
+⚠️ **Until the migration is applied**, the app still loads tasks fine (the missing column
+just reads as `null` → "Opened by: —"), but **creating or saving a task will fail** at
+Supabase because the column does not exist yet. Apply the SQL first.
+
+### UI behavior
+- **Add Task** (modal) and **inline edit** (expanded row) both show an **Opened by** dropdown
+  (label `Opened by *`, placeholder `Select opener`, options = current people).
+- **Required** in both create and edit. Zod: `opened_by_person_id: z.string().min(1, 'Opened by is required')`.
+  Submitting without a selection shows the inline error **"Opened by is required"** and blocks save.
+- Editing an existing task that has no `opened_by_person_id` defaults the dropdown to empty,
+  so the user **must pick** a value before the form will save.
+- **Expanded details** show a new `Opened by` row (UserPlus icon) right under `Assigned to`.
+
+### Existing tasks (no `opened_by` yet)
+- Displayed as **`Opened by: —`** (same dash style as an unassigned responsible person).
+- **Not** bulk-assigned to anyone — no silent default was applied. Each task gets a value
+  the next time it is edited (the form requires one before saving).
+
+### CSV import / sync
+- The importer (`scripts/import_excel_tasks.ts`) and sync (`scripts/sync_csv_tasks.ts`) were
+  **not changed**. The CSV has no "opened by" column, so imported/synced tasks get
+  `opened_by_person_id = null` (column default) and display `Opened by: —`. `opened_by` is
+  **not required** for CSV import. The scripts define their own row types and select explicit
+  columns, so the new column does not affect them.
+
+### Mock / localStorage mode
+- `src/lib/storage.ts` `addTask`/`updateTask` attach the computed `opened_by_person` from the
+  people list, mirroring `responsible_person`. Mock seed tasks (`mockData.ts`) intentionally
+  have no `opened_by` (they demonstrate the legacy "—" + required-on-edit behavior).

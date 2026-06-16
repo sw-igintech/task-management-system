@@ -1,4 +1,4 @@
-import { FileText, Calendar, User, Clock, Hash } from 'lucide-react';
+import { FileText, Calendar, User, UserPlus, Clock, Hash } from 'lucide-react';
 import type { Task } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
 import { formatDate, isOverdue } from '../lib/utils';
@@ -60,6 +60,13 @@ export function TaskExpandedView({ task }: TaskExpandedViewProps) {
             <span className="text-xs text-gray-500 w-20 shrink-0">Assigned to</span>
             <span className="text-sm text-gray-700">
               {task.responsible_person?.name || '—'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <UserPlus size={13} className="text-gray-400" />
+            <span className="text-xs text-gray-500 w-20 shrink-0">Opened by</span>
+            <span className="text-sm text-gray-700">
+              {task.opened_by_person?.name || '—'}
             </span>
           </div>
           <div className="flex items-center gap-2">

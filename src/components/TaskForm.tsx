@@ -13,6 +13,9 @@ const taskSchema = z.object({
   status: z.enum(['not_started', 'in_progress', 'on_hold', 'need_to_review', 'done']),
   priority: z.coerce.number().int().min(1).max(5),
   responsible_person_id: z.string().optional(),
+  // "Opened by" is required for both create and edit (existing tasks with no
+  // value must have one selected before saving).
+  opened_by_person_id: z.string().min(1, 'Opened by is required'),
   due_date: z.string().optional().nullable(),
   notes: z.string().optional(),
   description: z.string().optional(),
@@ -41,6 +44,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading }: TaskFo
       status: task?.status ?? 'not_started',
       priority: task?.priority ?? 2,
       responsible_person_id: task?.responsible_person_id ?? '',
+      opened_by_person_id: task?.opened_by_person_id ?? '',
       due_date: task?.due_date ?? '',
       notes: task?.notes ?? '',
       description: task?.description ?? '',
@@ -88,6 +92,17 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading }: TaskFo
           error={errors.due_date?.message}
         />
       </div>
+
+      <Select
+        label="Opened by *"
+        {...register('opened_by_person_id')}
+        error={errors.opened_by_person_id?.message}
+      >
+        <option value="">Select opener</option>
+        {people.map(p => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </Select>
 
       <Textarea
         label="Notes"

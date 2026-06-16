@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     CHECK (status IN ('not_started','in_progress','on_hold','need_to_review','done')),
   priority INTEGER NOT NULL DEFAULT 3 CHECK (priority BETWEEN 1 AND 5),
   responsible_person_id UUID REFERENCES people(id) ON DELETE SET NULL,
+  -- "Opened by" = who opened/requested the task (distinct from responsible_person_id).
+  -- Nullable so legacy/imported tasks without this value remain valid; the app
+  -- enforces it as required for newly created and edited tasks.
+  opened_by_person_id UUID REFERENCES people(id) ON DELETE SET NULL,
   due_date DATE,
   type TEXT,
   source_file TEXT,
@@ -34,6 +38,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_responsible ON tasks(responsible_person_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_opened_by_person_id ON tasks(opened_by_person_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_import_hash ON tasks(import_hash);

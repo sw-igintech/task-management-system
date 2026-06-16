@@ -17,18 +17,24 @@ const DEFAULT_FILTERS: TaskFilters = {
 function toDbPayload(data: Partial<Task>): Record<string, unknown> {
   const result: Record<string, unknown> = { ...data };
   delete result['responsible_person']; // computed join field, not a DB column
+  delete result['opened_by_person']; // computed join field, not a DB column
   delete result['id'];
   delete result['created_at'];
   delete result['updated_at'];
   return result;
 }
 
+// Attach both client-side person joins. Two separate FKs to people (responsible
+// vs opened-by) are resolved here, not via an ambiguous Supabase embedded join.
 function joinPerson(task: Task, peopleMap: Map<string, Person>): Task {
   return {
     ...task,
     responsible_person: task.responsible_person_id
       ? peopleMap.get(task.responsible_person_id)
       : undefined,
+    opened_by_person: task.opened_by_person_id
+      ? peopleMap.get(task.opened_by_person_id) ?? null
+      : null,
   };
 }
 

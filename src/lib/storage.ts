@@ -42,11 +42,15 @@ export function addTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'a
   const person = task.responsible_person_id
     ? people.find(p => p.id === task.responsible_person_id)
     : undefined;
+  const openedBy = task.opened_by_person_id
+    ? people.find(p => p.id === task.opened_by_person_id) ?? null
+    : null;
   const newTask: Task = {
     ...task,
     id: uuidv4(),
     archived: false,
     responsible_person: person,
+    opened_by_person: openedBy,
     created_at: now,
     updated_at: now,
   };
@@ -64,10 +68,16 @@ export function updateTask(id: string, updates: Partial<Task>): Task | null {
   const person = updates.responsible_person_id
     ? people.find(p => p.id === updates.responsible_person_id)
     : tasks[idx].responsible_person;
+  const openedBy = 'opened_by_person_id' in updates
+    ? (updates.opened_by_person_id
+        ? people.find(p => p.id === updates.opened_by_person_id) ?? null
+        : null)
+    : tasks[idx].opened_by_person;
   const updated: Task = {
     ...tasks[idx],
     ...updates,
     responsible_person: person,
+    opened_by_person: openedBy,
     updated_at: now,
   };
   tasks[idx] = updated;
