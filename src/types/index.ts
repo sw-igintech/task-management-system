@@ -10,6 +10,9 @@ export interface Person {
 
 export interface Task {
   id: string;
+  // Human-readable, stable task number shown as "TASK-<n>". DB-assigned (sequence
+  // default); optional in TS so the app degrades gracefully before the migration runs.
+  task_number?: number | null;
   title: string;
   description?: string;
   notes?: string;
@@ -44,5 +47,5 @@ export interface TaskFilters {
   due_this_week: boolean;
 }
 
-export type SortField = 'due_date' | 'priority' | 'responsible_person' | 'status' | 'updated_at' | 'title';
+export type SortField = 'task_number' | 'due_date' | 'priority' | 'responsible_person' | 'status' | 'updated_at' | 'title';
 export type SortDirection = 'asc' | 'desc';

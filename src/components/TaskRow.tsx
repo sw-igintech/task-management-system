@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Pencil, Archive, RotateCcw } from 'lucide-re
 import type { Row } from '@tanstack/react-table';
 import type { Task, Person } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
-import { formatDate, isOverdue, cn } from '../lib/utils';
+import { formatDate, formatTaskKey, isOverdue, cn } from '../lib/utils';
 import { TaskExpandedView } from './TaskExpandedView';
 import { TaskForm, type TaskFormData } from './TaskForm';
 
@@ -12,12 +12,15 @@ interface TaskRowProps {
   people: Person[];
   isExpanded: boolean;
   isEditing: boolean;
+  isHighlighted: boolean;
   onToggleExpand: () => void;
   onStartEdit: () => void;
   onStopEdit: () => void;
   onUpdateTask: (id: string, data: TaskFormData) => Promise<Task | null>;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
+  getTaskByNumber: (n: number) => Task | undefined;
+  onTaskReference: (n: number) => void;
   rowIndex: number;
 }
 
@@ -26,12 +29,15 @@ export function TaskRow({
   people,
   isExpanded,
   isEditing,
+  isHighlighted,
   onToggleExpand,
   onStartEdit,
   onStopEdit,
   onUpdateTask,
   onArchive,
   onRestore,
+  getTaskByNumber,
+  onTaskReference,
   rowIndex,
 }: TaskRowProps) {
   const task = row.original;
@@ -60,16 +66,26 @@ export function TaskRow({
   return (
     <>
       <tr
+        data-task-id={task.id}
+        data-task-number={task.task_number ?? ''}
         className={cn(
           'task-row border-b border-gray-100 transition-colors',
           rowIndex % 2 === 1 && 'task-row-alt',
           task.archived && 'opacity-60',
+          isHighlighted && 'task-row-highlight',
         )}
         onClick={onToggleExpand}
       >
         {/* Expand toggle */}
         <td className="w-8 pl-2 py-3 text-gray-400">
           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </td>
+
+        {/* Key */}
+        <td className="px-3 py-3 whitespace-nowrap">
+          <span className="text-xs font-semibold font-mono text-blue-700">
+            {formatTaskKey(task.task_number)}
+          </span>
         </td>
 
         {/* Title */}
@@ -150,7 +166,7 @@ export function TaskRow({
       {/* Expanded row: inline edit form when editing, otherwise read-only details */}
       {isExpanded && (
         <tr>
-          <td colSpan={7} className="p-0">
+          <td colSpan={8} className="p-0">
             {isEditing ? (
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
                 <div className="flex items-center justify-between mb-3">
@@ -172,7 +188,11 @@ export function TaskRow({
                 />
               </div>
             ) : (
-              <TaskExpandedView task={task} />
+              <TaskExpandedView
+                task={task}
+                getTaskByNumber={getTaskByNumber}
+                onTaskReference={onTaskReference}
+              />
             )}
           </td>
         </tr>

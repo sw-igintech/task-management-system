@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import { Plus, Menu, X } from 'lucide-react';
 import type { Task } from '../types';
 import { useTasks } from '../hooks/useTasks';
-import { TaskTable } from '../components/TaskTable';
+import { TaskTable, type TaskTableHandle } from '../components/TaskTable';
 import { FilterBar } from '../components/FilterBar';
 import { SmartViews } from '../components/SmartViews';
 import { TaskForm, type TaskFormData } from '../components/TaskForm';
@@ -34,6 +34,39 @@ export function TasksPage({ hookData }: TasksPageProps) {
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const tableRef = useRef<TaskTableHandle>(null);
+
+  // Lookup of task_number -> task, for resolving @<number> cross-task references.
+  const taskByNumber = useMemo(() => {
+    const map = new Map<number, Task>();
+    for (const t of tasks) {
+      if (t.task_number != null) map.set(t.task_number, t);
+    }
+    return map;
+  }, [tasks]);
+
+  const getTaskByNumber = useCallback((n: number) => taskByNumber.get(n), [taskByNumber]);
+
+  // Clicking a @reference: reveal the target (resetting filters that could hide it,
+  // matching its archived state) and ask the table to expand + scroll to it.
+  const handleTaskReference = useCallback((n: number) => {
+    const target = taskByNumber.get(n);
+    if (!target) {
+      console.warn(`[task-ref] TASK-${n} not found — nothing to open.`);
+      return;
+    }
+    setFilters(prev => ({
+      ...prev,
+      search: '',
+      statuses: [],
+      priorities: [],
+      personIds: [],
+      overdue_only: false,
+      due_this_week: false,
+      show_archived: target.archived,
+    }));
+    tableRef.current?.openTask(target.id);
+  }, [taskByNumber, setFilters]);
 
   const activeTasks = tasks.filter(t => !t.archived);
   const taskCounts = {
@@ -169,6 +202,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
 
         {/* Table */}
         <TaskTable
+          ref={tableRef}
           tasks={filteredTasks}
           people={people}
           sortField={sortField}
@@ -177,6 +211,8 @@ export function TasksPage({ hookData }: TasksPageProps) {
           onUpdateTask={handleUpdateTask}
           onArchive={archiveTask}
           onRestore={restoreTask}
+          getTaskByNumber={getTaskByNumber}
+          onTaskReference={handleTaskReference}
         />
       </div>
 

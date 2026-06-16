@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Task, Person, TaskFilters, SortField, SortDirection } from '../types';
 import { MOCK_TASKS, MOCK_PEOPLE } from './mockData';
-import { isOverdue, isDueThisWeek } from './utils';
+import { isOverdue, isDueThisWeek, matchesTaskNumber } from './utils';
 
 const TASKS_KEY = 'etm_tasks';
 const PEOPLE_KEY = 'etm_people';
@@ -45,9 +45,12 @@ export function addTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'a
   const openedBy = task.opened_by_person_id
     ? people.find(p => p.id === task.opened_by_person_id) ?? null
     : null;
+  // Mock mode mirrors the DB sequence: next number = max existing + 1.
+  const nextNumber = tasks.reduce((max, t) => Math.max(max, t.task_number ?? 0), 0) + 1;
   const newTask: Task = {
     ...task,
     id: uuidv4(),
+    task_number: task.task_number ?? nextNumber,
     archived: false,
     responsible_person: person,
     opened_by_person: openedBy,
@@ -127,7 +130,8 @@ export function getFilteredTasks(
       const matchTitle = task.title.toLowerCase().includes(q);
       const matchNotes = task.notes?.toLowerCase().includes(q);
       const matchPerson = task.responsible_person?.name.toLowerCase().includes(q);
-      if (!matchTitle && !matchNotes && !matchPerson) return false;
+      const matchNumber = matchesTaskNumber(task.task_number, filters.search);
+      if (!matchTitle && !matchNotes && !matchPerson && !matchNumber) return false;
     }
 
     // Multi-select categories: empty array = no filter. OR within a category.
@@ -148,6 +152,10 @@ export function getFilteredTasks(
     let valB: string | number | undefined;
 
     switch (sortField) {
+      case 'task_number':
+        valA = a.task_number ?? Number.MAX_SAFE_INTEGER;
+        valB = b.task_number ?? Number.MAX_SAFE_INTEGER;
+        break;
       case 'title':
         valA = a.title;
         valB = b.title;

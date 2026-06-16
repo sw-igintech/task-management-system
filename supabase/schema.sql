@@ -10,8 +10,13 @@ CREATE TABLE IF NOT EXISTS people (
 );
 
 -- Tasks table
+-- Human-readable task numbers (TASK-<n> in the UI). Auto-assigned by a sequence
+-- default; backfilled for pre-existing rows. See supabase/add_task_number_to_tasks.sql.
+CREATE SEQUENCE IF NOT EXISTS tasks_task_number_seq;
+
 CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  task_number INTEGER UNIQUE NOT NULL DEFAULT nextval('tasks_task_number_seq'),
   title TEXT NOT NULL,
   description TEXT,
   notes TEXT,
@@ -35,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 -- Indexes
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_number ON tasks(task_number);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_responsible ON tasks(responsible_person_id);

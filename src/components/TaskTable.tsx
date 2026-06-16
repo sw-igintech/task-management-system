@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,6 +10,12 @@ import type { SortField, SortDirection } from '../types';
 import type { TaskFormData } from './TaskForm';
 import { TaskRow } from './TaskRow';
 
+// Imperative API: lets the page open + scroll to a specific task (used when a
+// cross-task @reference link is clicked).
+export interface TaskTableHandle {
+  openTask: (taskId: string) => void;
+}
+
 interface TaskTableProps {
   tasks: Task[];
   people: Person[];
@@ -19,10 +25,13 @@ interface TaskTableProps {
   onUpdateTask: (id: string, data: TaskFormData) => Promise<Task | null>;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
+  getTaskByNumber: (n: number) => Task | undefined;
+  onTaskReference: (n: number) => void;
 }
 
 const columns: ColumnDef<Task>[] = [
   { id: 'expand', header: '', size: 32 },
+  { id: 'task_number', header: 'Key', size: 90 },
   { id: 'title', header: 'Title', accessorKey: 'title', size: 300 },
   { id: 'status', header: 'Status', accessorKey: 'status', size: 130 },
   { id: 'priority', header: 'Priority', accessorKey: 'priority', size: 120 },
@@ -31,7 +40,7 @@ const columns: ColumnDef<Task>[] = [
   { id: 'actions', header: '', size: 80 },
 ];
 
-const SORTABLE_COLUMNS = new Set<string>(['title', 'status', 'priority', 'responsible_person', 'due_date']);
+const SORTABLE_COLUMNS = new Set<string>(['task_number', 'title', 'status', 'priority', 'responsible_person', 'due_date']);
 
 function SortIcon({ field, sortField, sortDirection }: {
   field: SortField;
@@ -44,7 +53,7 @@ function SortIcon({ field, sortField, sortDirection }: {
     : <ArrowDown size={12} className="text-blue-500" />;
 }
 
-export function TaskTable({
+export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function TaskTable({
   tasks,
   people,
   sortField,
@@ -53,9 +62,34 @@ export function TaskTable({
   onUpdateTask,
   onArchive,
   onRestore,
-}: TaskTableProps) {
+  getTaskByNumber,
+  onTaskReference,
+}: TaskTableProps, ref) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Expand + scroll to + briefly highlight a task. Called imperatively from the
+  // page when a cross-task reference link is clicked. setState here runs in an
+  // event/timeout context (not render/effect), so it doesn't trip the lint rules.
+  useImperativeHandle(ref, () => ({
+    openTask: (taskId: string) => {
+      setEditingId(null);
+      setExpandedIds(prev => {
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+      setHighlightId(taskId);
+      // Scroll after the row is committed/visible; clear the highlight afterwards.
+      window.setTimeout(() => {
+        document
+          .querySelector(`[data-task-id="${taskId}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 60);
+      window.setTimeout(() => setHighlightId(cur => (cur === taskId ? null : cur)), 2200);
+    },
+  }), []);
 
   const table = useReactTable({
     data: tasks,
@@ -91,6 +125,7 @@ export function TaskTable({
   const stopEdit = () => setEditingId(null);
 
   const headerMap: Record<string, SortField> = {
+    task_number: 'task_number',
     title: 'title',
     status: 'status',
     priority: 'priority',
@@ -163,12 +198,15 @@ export function TaskTable({
                 people={people}
                 isExpanded={expandedIds.has(row.original.id)}
                 isEditing={editingId === row.original.id}
+                isHighlighted={highlightId === row.original.id}
                 onToggleExpand={() => toggleExpand(row.original.id)}
                 onStartEdit={() => startEdit(row.original.id)}
                 onStopEdit={stopEdit}
                 onUpdateTask={onUpdateTask}
                 onArchive={onArchive}
                 onRestore={onRestore}
+                getTaskByNumber={getTaskByNumber}
+                onTaskReference={onTaskReference}
                 rowIndex={idx}
               />
             ))}
@@ -177,4 +215,4 @@ export function TaskTable({
       </div>
     </div>
   );
-}
+});

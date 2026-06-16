@@ -1,11 +1,15 @@
-import { FileText, Calendar, User, UserPlus, Clock, Hash } from 'lucide-react';
+import { FileText, Calendar, User, UserPlus, Clock, Hash, Tag } from 'lucide-react';
 import type { Task } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
-import { formatDate, isOverdue } from '../lib/utils';
+import { formatDate, formatTaskKey, isOverdue } from '../lib/utils';
+import { TaskTextWithLinks } from './TaskTextWithLinks';
 import { format, parseISO } from 'date-fns';
 
 interface TaskExpandedViewProps {
   task: Task;
+  // Resolver + handler for @<number> cross-task references inside Notes/Description.
+  getTaskByNumber: (n: number) => Task | undefined;
+  onTaskReference: (n: number) => void;
 }
 
 function formatDateTime(dt: string) {
@@ -16,7 +20,7 @@ function formatDateTime(dt: string) {
   }
 }
 
-export function TaskExpandedView({ task }: TaskExpandedViewProps) {
+export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: TaskExpandedViewProps) {
   const overdue = isOverdue(task);
 
   return (
@@ -28,9 +32,16 @@ export function TaskExpandedView({ task }: TaskExpandedViewProps) {
             <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
             <div>
               <p className="text-xs font-medium text-gray-500 mb-0.5">Notes</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                {task.notes || <span className="text-gray-400 italic">No notes</span>}
-              </p>
+              {task.notes ? (
+                <TaskTextWithLinks
+                  text={task.notes}
+                  getTaskByNumber={getTaskByNumber}
+                  onReference={onTaskReference}
+                  className="text-sm text-gray-700"
+                />
+              ) : (
+                <span className="text-sm text-gray-400 italic">No notes</span>
+              )}
             </div>
           </div>
 
@@ -39,7 +50,12 @@ export function TaskExpandedView({ task }: TaskExpandedViewProps) {
               <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
               <div>
                 <p className="text-xs font-medium text-gray-500 mb-0.5">Description</p>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{task.description}</p>
+                <TaskTextWithLinks
+                  text={task.description}
+                  getTaskByNumber={getTaskByNumber}
+                  onReference={onTaskReference}
+                  className="text-sm text-gray-700"
+                />
               </div>
             </div>
           )}
@@ -47,6 +63,13 @@ export function TaskExpandedView({ task }: TaskExpandedViewProps) {
 
         {/* Right: metadata */}
         <div className="flex flex-col gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <Tag size={13} className="text-gray-400" />
+            <span className="text-xs text-gray-500 w-20 shrink-0">Task</span>
+            <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 font-mono">
+              {formatTaskKey(task.task_number)}
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500 w-24 shrink-0">Status</span>
             <StatusBadge status={task.status} />
@@ -101,8 +124,9 @@ export function TaskExpandedView({ task }: TaskExpandedViewProps) {
           )}
           {task.import_hash && (
             <div className="flex items-center gap-2">
-              <Hash size={13} className="text-gray-400" />
-              <span className="text-xs text-gray-400 font-mono truncate">{task.import_hash}</span>
+              <Hash size={12} className="text-gray-300" />
+              <span className="text-[10px] text-gray-400 w-16 shrink-0">hash (technical)</span>
+              <span className="text-[10px] text-gray-400 font-mono truncate">{task.import_hash}</span>
             </div>
           )}
         </div>

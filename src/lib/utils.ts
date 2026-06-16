@@ -16,6 +16,20 @@ export function formatDate(dateStr: string | null | undefined): string {
   }
 }
 
+// Human-readable task key, e.g. 123 -> "TASK-123". Falls back to "—" when a task
+// has no number yet (e.g. before the DB migration runs).
+export function formatTaskKey(taskNumber: number | null | undefined): string {
+  return taskNumber == null ? '—' : `TASK-${taskNumber}`;
+}
+
+// Returns true when a search query refers to this task's number. Accepts
+// "123", "TASK-123", "task-123" and "#123" (exact number match).
+export function matchesTaskNumber(taskNumber: number | null | undefined, query: string): boolean {
+  if (taskNumber == null) return false;
+  const m = query.trim().match(/^#?(?:task-)?(\d+)$/i);
+  return m != null && Number(m[1]) === taskNumber;
+}
+
 export function isOverdue(task: Task): boolean {
   if (!task.due_date) return false;
   if (task.status === 'done') return false;

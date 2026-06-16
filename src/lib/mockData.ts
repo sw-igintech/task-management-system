@@ -50,7 +50,7 @@ function makeTask(
   };
 }
 
-export const MOCK_TASKS: Task[] = [
+const MOCK_TASKS_SEED: Task[] = [
   // AMIT's Tasks (pages 1-2)
   makeTask('task-001', 'Type C cartridges assembly test', 'In progress', 1, 'Redesign robast', 'Amit', '2026-05-28', 1),
   makeTask('task-002', 'Update ASMmbly instrucations', 'Not started', 1, 'Waiting for new assembly instruction to verify it. All encoder magnet need to be at distance 0.6-0.9 mm aim to 0.75', 'Amit', '2026-04-30', 1),
@@ -124,3 +124,7 @@ export const MOCK_TASKS: Task[] = [
   makeTask('task-062', 'Karrie mold status', 'Not started', 2, 'Status', 'Tamir', '2026-04-16', 5),
   makeTask('task-063', 'Prepare list for Karrie visit', 'Not started', 2, '', 'Tamir', '2026-04-23', 5),
 ];
+
+// Assign stable, sequential task numbers (TASK-1 … TASK-63), mirroring the DB
+// backfill so mock mode shows the same human-readable keys.
+export const MOCK_TASKS: Task[] = MOCK_TASKS_SEED.map((t, i) => ({ ...t, task_number: i + 1 }));

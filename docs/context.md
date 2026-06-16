@@ -86,7 +86,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 ### `tasks` table
 | Column | Type | Notes |
 |---|---|---|
-| `id` | UUID PK | |
+| `id` | UUID PK | internal id |
+| `task_number` | INTEGER UNIQUE NOT NULL | human-readable id shown as `TASK-<n>`; DB-assigned via `tasks_task_number_seq` default; backfilled for existing rows (see §10b) |
 | `title` | TEXT NOT NULL | |
 | `description` | TEXT | nullable |
 | `notes` | TEXT | nullable |
@@ -256,6 +257,45 @@ modal and the inline expanded-row editor. **Applies to both Notes and Descriptio
   so Hebrew/English direct typing works; the prefix sits on its own line unless at start of
   field or right after a newline. Selected text is replaced by `prefix + typed char`.
 - Full details, edge-case table, and the IME limitation: see `docs/task-text-traceability.md`.
+
+---
+
+## 10b. Task numbers (TASK-123) & cross-task references (@123)
+
+Human-readable task keys plus `@number` cross-task links. Full guide:
+`docs/task-references.md`.
+
+- **`task_number`** (`tasks.task_number INTEGER UNIQUE NOT NULL`) shown as **`TASK-<n>`** via
+  `formatTaskKey()`. DB-assigned by sequence default `tasks_task_number_seq`; the app never
+  sends it (stripped in `useTasks.toDbPayload`). UUID `id` is still the internal PK.
+- **UI:** new sortable **Key** column in the table; expanded view shows `Task: TASK-<n>`
+  prominently and demotes the raw `import_hash` to a tiny "hash (technical)" line. The
+  `import_hash` is **no longer the primary UI identifier** — kept for debugging only.
+- **Search** also matches the number: `123`, `TASK-123`, `task-123`, `#123` (exact match,
+  via `matchesTaskNumber()`); title/notes/person search unchanged.
+- **References:** typing `@123` / `@TASK-123` / `@task-123` in Notes/Description is stored as
+  raw text and **linkified only at read-time** (`src/components/TaskTextWithLinks.tsx`, no
+  `dangerouslySetInnerHTML`, line breaks preserved). Emails are not matched (the `@` must not
+  follow a word char). Clicking a link resets hiding filters (matching the target's archived
+  state), then expands + scrolls + briefly highlights the target row (`TaskTable.openTask`
+  imperative handle; rows carry `data-task-id`/`data-task-number`). Unknown numbers render as
+  subtle plain text and never crash.
+- **Mock mode:** seed tasks get `TASK-1…TASK-63`; new mock tasks get `max + 1`. Search/links
+  work in mock mode.
+- **Import/sync scripts:** unchanged. They never send `task_number`; the DB default assigns it
+  for inserted rows. (`select('*')` now also returns `task_number`, which is harmless.)
+
+### Migration / apply instructions
+- **File:** `supabase/add_task_number_to_tasks.sql` (idempotent): adds the column nullable,
+  backfills existing rows by `created_at ASC, title ASC, id ASC`, creates + seeds the
+  sequence, sets it as the column default, adds the unique index, then `SET NOT NULL`.
+- **Apply status: NOT applied automatically** — DDL can't run through the anon key/PostgREST,
+  and no `service_role` key is configured. **Run it manually** in the Supabase **SQL Editor**.
+- **Until applied:** tasks have no `task_number` → keys show `—`, number search finds nothing,
+  and `@n` references don't resolve. The app otherwise works (new inserts succeed; the column
+  is just absent). Verify after running:
+  - `SELECT COUNT(*) FROM tasks WHERE task_number IS NULL;` → expect `0`
+  - `SELECT COUNT(*) total, COUNT(DISTINCT task_number) uniq FROM tasks;` → `total = uniq`
 
 ---
 
