@@ -148,6 +148,13 @@ no DNS/custom-domain change; no merge to main.
   runtime path needs **no Supabase secrets** — those GitHub secrets still exist but are not
   used by the Worker/D1 path.
 - All three are **manual (`workflow_dispatch`) only** — they never run on push or on main.
+- **CORS:** the Worker allow-list (`worker/src/index.ts`) includes
+  `https://staging.task-management-system-3nm.pages.dev`,
+  `https://production-candidate.task-management-system-3nm.pages.dev`, and
+  `http://localhost:5173`. A new production origin/custom domain must be **added to this
+  allow-list** at cutover, or the browser will block API responses (empty UI).
+- **The `production-candidate.*.pages.dev` URL is temporary** (validation only) — the final
+  public URL / custom domain is selected at cutover; not configured here.
 - See `docs/production-cutover-checklist.md`.
 
 ## 4. Intentionally NOT included yet

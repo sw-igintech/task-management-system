@@ -21,6 +21,12 @@
 Cloudflare Pages (production-candidate) → Worker (task-management-api-production) → D1 (task-management-production)
 ```
 
+> ⚠️ **The `production-candidate.*.pages.dev` URL is temporary** — a validation surface, **not**
+> the final public URL. The final URL / custom domain is chosen during the final cutover
+> (step 4); no custom domain is configured yet. The production Worker's CORS allow-list
+> currently includes this candidate origin (alongside staging + localhost); the final
+> production origin/domain must be added to the allow-list at cutover.
+
 ## 3. Final manual validation (do before any cutover)
 
 On the production-candidate URL, confirm:
