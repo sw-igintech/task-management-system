@@ -59,6 +59,23 @@ A separate read-only Worker now sits in front of Supabase (frontend not switched
   - `SUPABASE_URL` — same value as `VITE_SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase **service role** key (⚠️ never expose to the
     frontend / never commit). **Add this GitHub secret** — it is not present yet.
+- **Endpoints:** read (`/health`, `/api/people`, `/api/tasks`) **and** write
+  (POST `/api/people`, POST `/api/tasks`, PATCH `/api/tasks/:id`,
+  POST `/api/tasks/:id/archive`, POST `/api/tasks/:id/restore`). No `DELETE` (soft archive only).
+- **How the deploy binds secrets:** the workflow runs `wrangler deploy`, then pipes each
+  GitHub secret to `wrangler secret put` over stdin (`SUPABASE_URL` from `VITE_SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY` from the same-named secret) — values are masked and never echoed.
+- **Verify after deploy:**
+  ```bash
+  B=https://task-management-api.sw-590.workers.dev
+  curl -i $B/health        # 200
+  curl -i $B/api/tasks     # 200, ~140 tasks
+  curl -i $B/api/people    # 200, 5 people
+  ```
+  CRUD smoke test (creates one clearly-labelled temp task, leaves it archived): see
+  `docs/cloudflare-worker-api.md`.
+- ⚠️ **No app auth yet + service-role key → staging/internal only.** Do not expose write
+  endpoints to production before adding access control.
 - Full details: `docs/cloudflare-worker-api.md`.
 
 ## 4. Intentionally NOT included yet

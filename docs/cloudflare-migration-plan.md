@@ -64,10 +64,15 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
 4. **Worker API abstraction** — introduce a Cloudflare Worker that exposes the API the
    frontend needs. Frontend talks to an abstraction layer so the backend can be swapped.
    Worker initially proxies / mirrors Supabase. No data move yet.
-   🔄 *in progress: read-only Worker `task-management-api` (`worker/`, deployed via
-   `.github/workflows/deploy-cloudflare-worker.yml`) with `/health`, `/api/people`,
-   `/api/tasks` reading Supabase via the server-side service-role key. The frontend is NOT
-   switched to it yet; D1 remains future. See `docs/cloudflare-worker-api.md`.*
+   ✅ *done: Worker `task-management-api` (`worker/`, deployed via
+   `.github/workflows/deploy-cloudflare-worker.yml`) now exposes the full read + write CRUD
+   the frontend uses — `/health`, GET/POST `/api/people`, GET/POST `/api/tasks`,
+   PATCH `/api/tasks/:id`, POST `/api/tasks/:id/archive`, POST `/api/tasks/:id/restore` —
+   over Supabase via the server-side service-role key. Verified incl. a non-destructive write
+   smoke test. **Frontend is NOT switched yet; no auth yet (staging/internal only); D1 and
+   email remain future.** See `docs/cloudflare-worker-api.md`.*
+   ➡️ **Next:** switch the frontend data layer to optionally use the Worker API behind an env
+   flag, keeping direct Supabase as the default fallback.
 5. **D1 staging migration** — create the D1 schema, migrate a COPY of the data into D1,
    point the Worker at D1 **in staging only**. Verify parity against Supabase.
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.
