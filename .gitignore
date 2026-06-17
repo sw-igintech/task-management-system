@@ -7,8 +7,10 @@ dist-ssr/
 
 # Environment variables — never commit secrets
 .env
+.env.*
 .env.local
 .env.*.local
+!.env.example
 
 # Backups produced by the task import/sync scripts — never commit
 backups/
@@ -16,8 +18,12 @@ backups/
 # Sync/dry-run reports produced by scripts/sync_csv_tasks.ts — never commit
 reports/
 
-# Private task source exports (internal engineering data) — kept out of version control.
-# These are the import source of truth; the data lives in Supabase after import.
+# Private task source exports / data files (internal engineering data) — kept out of
+# version control. These are import sources; the data lives in the database after import.
+# Broad rules for future safety (no such files are tracked today).
+*.csv
+*.xlsx
+*.pdf
 New Engineering Tasks*.csv
 New Engineering Tasks*.xlsx
 New Engineering Tasks*.pdf
