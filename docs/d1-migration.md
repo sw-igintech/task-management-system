@@ -36,9 +36,12 @@ backend adapter — can be developed and verified against real-shaped data witho
    `GET /api/people` and `GET /api/tasks?include_archived=true` and writes
    `exports/d1/{people,tasks,export-summary}.json`. No secrets required.
 2. **Generate** — `node scripts/d1/generate-d1-import-sql.mjs` reads the JSON and writes
-   `exports/d1/import-staging.sql`: `PRAGMA foreign_keys=OFF; BEGIN; DELETE FROM tasks;
-   DELETE FROM people; INSERT … ; COMMIT; PRAGMA foreign_keys=ON;`. Strings escaped,
-   `archived` → `0/1`, empty/missing → `NULL`, `task_number`/ids/timestamps preserved.
+   `exports/d1/import-staging.sql`: `DELETE FROM tasks; DELETE FROM people; INSERT … ;`.
+   Strings escaped, `archived` → `0/1`, empty/missing → `NULL`,
+   `task_number`/ids/timestamps preserved. **No explicit `BEGIN`/`COMMIT`/`PRAGMA`** —
+   Cloudflare D1 rejects SQL transaction statements, and `wrangler d1 execute --file` runs
+   the whole file atomically as one batch (so the DELETE-then-INSERT replace stays
+   all-or-nothing). D1 also does not enforce foreign keys.
 3. **Import** — `wrangler d1 execute task-management-staging --remote --file=…` applies the
    schema then the import SQL. Orchestrated by `.github/workflows/d1-staging-import.yml`
    (trigger: `workflow_dispatch`, or push touching `d1/**` / `scripts/d1/**`). Requires only

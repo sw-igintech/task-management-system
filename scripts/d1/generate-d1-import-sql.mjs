@@ -51,10 +51,14 @@ async function main() {
   const people = JSON.parse(await readFile(join(DIR, 'people.json'), 'utf8'));
   const tasks = JSON.parse(await readFile(join(DIR, 'tasks.json'), 'utf8'));
 
+  // NOTE: no explicit `BEGIN TRANSACTION` / `COMMIT` / `PRAGMA` here. Cloudflare D1
+  // rejects SQL transaction statements ("use the storage transaction API instead"), and
+  // `wrangler d1 execute --file` already runs the whole file atomically as one batch — so
+  // the DELETE-then-INSERT replace is still all-or-nothing. D1 also does not enforce
+  // foreign keys, so the FK toggles are unnecessary. Destructive to the D1 copy ONLY.
   const lines = [];
   lines.push('-- D1 STAGING import (generated). Destructive to the D1 copy ONLY; never Supabase.');
-  lines.push('PRAGMA foreign_keys = OFF;');
-  lines.push('BEGIN TRANSACTION;');
+  lines.push('-- Run with: wrangler d1 execute task-management-staging --remote --file=this.sql');
   lines.push('DELETE FROM tasks;');
   lines.push('DELETE FROM people;');
   for (const p of people) {
@@ -63,8 +67,6 @@ async function main() {
   for (const t of tasks) {
     lines.push(`INSERT INTO tasks (${TASK_COLS.join(', ')}) VALUES ${taskValues(t)};`);
   }
-  lines.push('COMMIT;');
-  lines.push('PRAGMA foreign_keys = ON;');
   lines.push('');
 
   const out = join(DIR, 'import-staging.sql');
