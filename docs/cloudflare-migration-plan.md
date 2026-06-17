@@ -89,6 +89,15 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    See `docs/cloudflare-worker-api.md` + `docs/d1-migration.md`.*
    ➡️ **Next:** full browser-level validation of staging on D1, then decide auth/access
    control before any production cutover. Email and production cutover remain future.
+   ✅ *production candidate prepared (no cutover): D1 `task-management-production` (clean copy
+   from Supabase, smoke-test tasks excluded), Worker `task-management-api-production` bound to
+   it (`wrangler.toml [env.production]`), and a Cloudflare Pages **production-candidate** branch
+   deployment pointing at the production Worker. All via manual `workflow_dispatch` workflows
+   (`d1-production-import`, `deploy-cloudflare-worker-production`,
+   `deploy-cloudflare-pages-production-preview`). **No DNS/custom-domain change, no merge to
+   main, Vercel + Supabase untouched.** See `docs/production-cutover-checklist.md`.*
+   ⚠️ *Auth/access control intentionally deferred (user-accepted risk) — must be addressed
+   before broad production exposure.*
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.
    Keys live in Cloudflare/GitHub secrets, never in code.
 7. **Production cutover** — switch the production domain to Cloudflare Pages + Workers + D1

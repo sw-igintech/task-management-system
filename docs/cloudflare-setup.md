@@ -125,6 +125,31 @@ remains the source of truth; nothing reads/writes D1 at runtime yet.
   Deploy still uses only `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - Full details + verification SQL: `docs/d1-migration.md`.
 
+## 3e. Cloudflare PRODUCTION candidate (prepared, not cut over)
+
+A full parallel production stack exists as a **candidate** — Vercel + Supabase remain live;
+no DNS/custom-domain change; no merge to main.
+
+- **D1 production DB:** `task-management-production` (clean copy exported from Supabase via
+  `scripts/d1/export-supabase-data.mjs`, archived smoke-test tasks excluded; imported by
+  `.github/workflows/d1-production-import.yml`). Its `database_id` is set in
+  `worker/wrangler.toml [[env.production.d1_databases]]`.
+- **Production Worker:** `task-management-api-production` (`wrangler.toml [env.production]`,
+  bound to D1 production; same D1-only code, no Supabase at runtime). Deployed by
+  `.github/workflows/deploy-cloudflare-worker-production.yml` (`workflow_dispatch` only).
+  URL: `https://task-management-api-production.<account-subdomain>.workers.dev`.
+- **Production-preview frontend:** `.github/workflows/deploy-cloudflare-pages-production-preview.yml`
+  (`workflow_dispatch` only) builds with `VITE_USE_WORKER_API=true` +
+  `VITE_WORKER_API_URL=<production Worker URL>` and deploys to the existing Pages project under
+  the **`production-candidate`** branch → `https://production-candidate.task-management-system-3nm.pages.dev`.
+- **Secrets/variables used:** Cloudflare deploys use `CLOUDFLARE_API_TOKEN` +
+  `CLOUDFLARE_ACCOUNT_ID`. The D1 production **import** uses `VITE_SUPABASE_URL` +
+  `SUPABASE_SERVICE_ROLE_KEY` (read-only export from Supabase). The production Worker/Pages
+  runtime path needs **no Supabase secrets** — those GitHub secrets still exist but are not
+  used by the Worker/D1 path.
+- All three are **manual (`workflow_dispatch`) only** — they never run on push or on main.
+- See `docs/production-cutover-checklist.md`.
+
 ## 4. Intentionally NOT included yet
 
 - Cloudflare **Workers** API

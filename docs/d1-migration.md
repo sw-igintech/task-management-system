@@ -25,8 +25,25 @@ validation, then auth/access-control decisions before any production cutover.
 
 | Name | Status |
 |---|---|
-| `task-management-staging` | created/used in this step (the copy target) |
-| `task-management-production` | **planned name only — do NOT create or use yet** |
+| `task-management-staging` | live staging copy; Worker `task-management-api` is bound to it |
+| `task-management-production` | **created** as a production candidate (not cut over); Worker `task-management-api-production` is bound to it |
+
+### Production import (clean source)
+
+- **Source:** **Supabase** (the original source of truth, untouched) — chosen because staging
+  D1 contains smoke-test tasks (TASK-141/142/143) that must not pollute production.
+- **Script:** `scripts/d1/export-supabase-data.mjs` (read-only). **Smoke-test exclusion**:
+  drop tasks where `archived` AND title contains `DELETE ME` AND one of
+  `Worker CRUD smoke test` / `Worker frontend smoke test` / `D1 Worker smoke test`. These are
+  **not** deleted from Supabase — only excluded from the production copy. (Supabase contains
+  TASK-141 & TASK-142; TASK-143 was D1-staging-only and is not in Supabase at all.)
+- **Generate + import:** `node scripts/d1/generate-d1-import-sql.mjs production` →
+  `exports/d1-production/import-production.sql`; applied by
+  `.github/workflows/d1-production-import.yml` (`workflow_dispatch`).
+- **Verification SQL:** same as staging (people / total / active / archived / null / dup
+  task_number) plus `SELECT COUNT(*) FROM tasks WHERE title LIKE '%DELETE ME%'` (expect 0).
+- **Rollback:** D1 production is disposable and additive; Supabase + Vercel remain the live
+  production and rollback. No DNS/custom-domain change; no cutover.
 
 ## 4. Schema
 

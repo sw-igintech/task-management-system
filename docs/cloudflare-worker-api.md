@@ -12,6 +12,19 @@ A server-side API boundary between the frontend and the database. The frontend (
 calls this Worker; the Worker now reads/writes D1. Swapping Supabase → D1 happened here
 without changing the frontend's call sites.
 
+## Two Workers (staging + production candidate)
+
+Both run the **same D1-only code** (`worker/src/index.ts`), selected by Wrangler environment
+in `worker/wrangler.toml`. Neither uses Supabase at runtime.
+
+| Worker | Wrangler env | D1 binding `DB` → | URL | Deploy workflow |
+|---|---|---|---|---|
+| `task-management-api` (staging) | default (`wrangler deploy`) | `task-management-staging` | `task-management-api.sw-590.workers.dev` | `deploy-cloudflare-worker.yml` (push + dispatch) |
+| `task-management-api-production` (candidate) | `production` (`wrangler deploy --env production`) | `task-management-production` | `task-management-api-production.<subdomain>.workers.dev` | `deploy-cloudflare-worker-production.yml` (**dispatch only**) |
+
+Deploying production does **not** touch staging. Auth limitation (no app auth yet) applies to
+both — staging/internal & production-candidate only until access control is added.
+
 ## Architecture (this branch / staging)
 
 ```

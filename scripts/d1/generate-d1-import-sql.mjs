@@ -1,16 +1,22 @@
-// Generate a STAGING-ONLY replacement import for D1 from the exported JSON.
-// Reads exports/d1/people.json + exports/d1/tasks.json and writes
-// exports/d1/import-staging.sql.
+// Generate a replacement import for a D1 copy from the exported JSON.
 //
-// ⚠️ The generated SQL is DESTRUCTIVE to the D1 staging copy ONLY (it DELETEs from
+// Usage:
+//   node scripts/d1/generate-d1-import-sql.mjs            # staging  (default)
+//   node scripts/d1/generate-d1-import-sql.mjs production # production
+//
+// staging:    reads exports/d1/{people,tasks}.json            → exports/d1/import-staging.sql
+// production: reads exports/d1-production/{people,tasks}.json → exports/d1-production/import-production.sql
+//
+// ⚠️ The generated SQL is DESTRUCTIVE to the targeted D1 COPY ONLY (it DELETEs from
 // tasks/people first, then re-inserts). It NEVER touches Supabase.
-//
-// Usage: node scripts/d1/generate-d1-import-sql.mjs
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const DIR = join('exports', 'd1');
+const MODE = process.argv[2] === 'production' ? 'production' : 'staging';
+const DIR = MODE === 'production' ? join('exports', 'd1-production') : join('exports', 'd1');
+const OUT_FILE = MODE === 'production' ? 'import-production.sql' : 'import-staging.sql';
+const DB_NAME = MODE === 'production' ? 'task-management-production' : 'task-management-staging';
 
 // SQL string literal: null/undefined/'' → NULL; else single-quote-escaped.
 function txt(v) {
@@ -57,8 +63,8 @@ async function main() {
   // the DELETE-then-INSERT replace is still all-or-nothing. D1 also does not enforce
   // foreign keys, so the FK toggles are unnecessary. Destructive to the D1 copy ONLY.
   const lines = [];
-  lines.push('-- D1 STAGING import (generated). Destructive to the D1 copy ONLY; never Supabase.');
-  lines.push('-- Run with: wrangler d1 execute task-management-staging --remote --file=this.sql');
+  lines.push(`-- D1 ${MODE.toUpperCase()} import (generated). Destructive to the D1 copy ONLY; never Supabase.`);
+  lines.push(`-- Run with: wrangler d1 execute ${DB_NAME} --remote --file=this.sql`);
   lines.push('DELETE FROM tasks;');
   lines.push('DELETE FROM people;');
   for (const p of people) {
@@ -69,9 +75,9 @@ async function main() {
   }
   lines.push('');
 
-  const out = join(DIR, 'import-staging.sql');
+  const out = join(DIR, OUT_FILE);
   await writeFile(out, lines.join('\n'));
-  console.log(`[generate] wrote ${out} (${people.length} people, ${tasks.length} tasks)`);
+  console.log(`[generate:${MODE}] wrote ${out} (${people.length} people, ${tasks.length} tasks)`);
 }
 
 main().catch((err) => {

@@ -1,0 +1,77 @@
+name: D1 Production Import
+
+# Creates/reuses the Cloudflare D1 PRODUCTION database, applies the schema, exports a CLEAN
+# copy of the data straight from Supabase (the original source of truth — untouched),
+# excludes archived smoke-test tasks, and imports the result into D1 production.
+#
+# This does NOT cut over production, NOT change DNS, NOT touch Supabase/Vercel, and NOT
+# deploy any Worker/Pages. Manual trigger only. GitHub Actions owns this.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  D1_NAME: task-management-production
+
+jobs:
+  d1-prod-import:
+    name: Build & import D1 production copy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create D1 production DB (no-op if it already exists)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 create "$D1_NAME" || echo "D1 '$D1_NAME' already exists — continuing."
+
+      - name: Show D1 database info (id is not a secret — copy it into wrangler.toml [env.production])
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 info "$D1_NAME" || true
+
+      - name: Apply schema to D1 production (remote)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --file=d1/schema.sql
+
+      - name: Export CLEAN data from Supabase (read-only; excludes smoke tests)
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/d1/export-supabase-data.mjs
+
+      - name: Generate D1 production import SQL
+        run: node scripts/d1/generate-d1-import-sql.mjs production
+
+      - name: Import data copy into D1 production (remote, prod-copy-only replace)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --file=exports/d1-production/import-production.sql
+
+      - name: Verify D1 production counts & constraints
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          run_sql() { echo "## $1"; npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --command="$2"; }
+          run_sql "people count (expect 5)" "SELECT COUNT(*) AS people FROM people;"
+          run_sql "tasks total (expect ~140)" "SELECT COUNT(*) AS tasks_total FROM tasks;"
+          run_sql "active tasks (expect ~140)" "SELECT COUNT(*) AS active FROM tasks WHERE archived = 0;"
+          run_sql "archived tasks (expect 0 — smoke tests excluded)" "SELECT COUNT(*) AS archived FROM tasks WHERE archived = 1;"
+          run_sql "null task_number (expect 0)" "SELECT COUNT(*) AS null_task_number FROM tasks WHERE task_number IS NULL;"
+          run_sql "duplicate task_number (expect 0)" "SELECT COUNT(*) AS dup_task_number FROM (SELECT task_number FROM tasks WHERE task_number IS NOT NULL GROUP BY task_number HAVING COUNT(*) > 1);"
+          run_sql "DELETE ME tasks (expect 0)" "SELECT COUNT(*) AS delete_me FROM tasks WHERE title LIKE '%DELETE ME%';"

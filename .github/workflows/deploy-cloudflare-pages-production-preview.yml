@@ -1,0 +1,53 @@
+name: Deploy Cloudflare Pages Production Preview
+
+# Builds the frontend pointed at the PRODUCTION Worker and deploys it to the existing
+# Cloudflare Pages project as a separate "production-candidate" branch deployment:
+#   https://production-candidate.task-management-system-3nm.pages.dev
+#
+# This is a PREVIEW/CANDIDATE only — it does NOT touch the `staging` alias, does NOT change
+# DNS/custom domain, does NOT disable Vercel, and is NOT production cutover. GitHub Actions
+# owns the deploy (no Cloudflare Git integration). MANUAL trigger only.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Production-candidate frontend talks to the PRODUCTION Worker (D1 production).
+  VITE_USE_WORKER_API: 'true'
+  VITE_WORKER_API_URL: 'https://task-management-api-production.sw-590.workers.dev'
+
+jobs:
+  deploy:
+    name: Build & deploy production-candidate frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Worker API mode → production Worker)
+        env:
+          VITE_USE_WORKER_API: ${{ env.VITE_USE_WORKER_API }}
+          VITE_WORKER_API_URL: ${{ env.VITE_WORKER_API_URL }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages (production-candidate branch)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 pages deploy dist \
+            --project-name task-management-system \
+            --branch production-candidate \
+            --commit-dirty=true
