@@ -14,7 +14,7 @@ export function Textarea({ label, error, className, ...props }: TextareaProps) {
       )}
       <textarea
         className={cn(
-          'border border-gray-300 rounded-md px-3 py-2 text-sm',
+          'border border-gray-300 rounded-md px-3 py-2 text-sm bg-white',
           'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
           'resize-y min-h-[80px]',
           error && 'border-red-400',
