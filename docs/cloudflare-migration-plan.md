@@ -36,9 +36,15 @@ Production URL: https://task-management-system-gray-beta.vercel.app
 - **Cloudflare D1** — the SQL database behind the Workers API.
 - **Resend / SendGrid** — sends transactional email (notifications) from the Worker.
 
+## Migration branch (updated)
+
+The migration uses **one long-running branch: `cloudflare/full-migration`** (not a branch
+per step). Work accumulates there and is deployed to Cloudflare **staging** via GitHub
+Actions. `main` stays on the Vercel + Supabase production path until a verified cutover.
+
 ## 4. Safe migration phases
 
-Each phase is its own PR (or small set of PRs). Do not combine phases.
+Each phase is committed to `cloudflare/full-migration`. Do not combine DB and hosting moves.
 
 0. **Baseline / tag / backup** — capture a known-good state. Annotated tag
    `v0.1.0-supabase-vercel-stable` marks the last Vercel+Supabase commit. Back up the
@@ -50,6 +56,10 @@ Each phase is its own PR (or small set of PRs). Do not combine phases.
    ✅ *done in this phase (`.github/workflows/ci.yml`).*
 3. **Cloudflare staging deploy** — add a Cloudflare Pages project that builds the SAME
    frontend to a **staging** URL. Production stays on Vercel. Compare behavior.
+   🔄 *in progress: `.github/workflows/deploy-cloudflare-pages.yml` deploys `dist/` to the
+   Cloudflare Pages project `task-management-system` (preview/staging) on every push to
+   `cloudflare/full-migration`. GitHub Actions owns the deploy; the app still uses Supabase.
+   See `docs/cloudflare-setup.md`.*
 4. **Worker API abstraction** — introduce a Cloudflare Worker that exposes the API the
    frontend needs. Frontend talks to an abstraction layer so the backend can be swapped.
    Worker initially proxies / mirrors Supabase. No data move yet.
