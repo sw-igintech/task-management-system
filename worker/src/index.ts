@@ -21,8 +21,9 @@ const TASK_FIELDS = [
 const PERSON_FIELDS = ['name', 'email'] as const;
 
 const ALLOWED_ORIGINS = new Set<string>([
-  'https://staging.task-management-system-3nm.pages.dev',
+  'https://task-management-system-3nm.pages.dev', // official Cloudflare production
   'https://production-candidate.task-management-system-3nm.pages.dev',
+  'https://staging.task-management-system-3nm.pages.dev',
   'http://localhost:5173',
 ]);
 

@@ -157,6 +157,26 @@ no DNS/custom-domain change; no merge to main.
   public URL / custom domain is selected at cutover; not configured here.
 - See `docs/production-cutover-checklist.md`.
 
+## 3f. Official Cloudflare production (cutover)
+
+The official Cloudflare production stack (Vercel + Supabase kept as rollback):
+
+```
+https://task-management-system-3nm.pages.dev
+  → https://task-management-api-production.sw-590.workers.dev   (Worker: task-management-api-production)
+  → D1 task-management-production  (id a5f4558a-d8db-41ba-9d2a-a5cd9210eb16)
+```
+
+- **Official production frontend URL:** `https://task-management-system-3nm.pages.dev`
+  (the `task-management-system` Pages project's production deployment; production branch `main`).
+- **Production Worker:** `task-management-api-production` →
+  `https://task-management-api-production.sw-590.workers.dev`.
+- **D1 production:** `task-management-production` (`a5f4558a-d8db-41ba-9d2a-a5cd9210eb16`).
+- **Workflows (all `workflow_dispatch`-only):** `deploy-cloudflare-pages-production.yml`
+  (official prod frontend), `deploy-cloudflare-worker-production.yml` (prod Worker),
+  `d1-production-import.yml` (refresh D1 prod from Supabase).
+- **No DNS/custom domain** configured; **no auth**; Vercel + Supabase remain live as rollback.
+
 ## 4. Intentionally NOT included yet
 
 - Cloudflare **Workers** API

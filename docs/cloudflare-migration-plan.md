@@ -102,6 +102,12 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    Keys live in Cloudflare/GitHub secrets, never in code.
 7. **Production cutover** — switch the production domain to Cloudflare Pages + Workers + D1
    only after staging is fully verified. Keep Vercel + Supabase running in parallel.
+   ✅ *Cutover performed (`.pages.dev`, no custom domain): merged `cloudflare/full-migration` →
+   `main` (after tagging `v0.1.0-vercel-supabase-before-cloudflare-cutover` on the pre-cutover
+   main), refreshed D1 production from Supabase, deployed the official Cloudflare production
+   frontend `https://task-management-system-3nm.pages.dev` → production Worker → D1 production.
+   **Vercel + Supabase remain live, untouched, as rollback (≥ 1–2 weeks). No DNS/custom-domain
+   change. No auth/email added.** See `docs/production-cutover-checklist.md`.*
 8. **Rollback ready** — if anything regresses, repoint DNS/config back to Vercel + Supabase.
    Decommission the old stack only after a stable bake-in period.
 

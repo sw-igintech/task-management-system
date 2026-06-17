@@ -45,20 +45,33 @@ On the production-candidate URL, confirm:
 - [ ] Opened by field
 - [ ] DevTools Network shows calls to `task-management-api-production.*.workers.dev`
 
-## 4. Cutover steps (LATER — not in this prompt)
+## 4. Cutover steps — performed
 
-1. Decide the final domain (keep `.pages.dev`, or attach a custom domain).
-2. Merge `cloudflare/full-migration` → `main` (or tag a release) once validated.
-3. Deploy the Cloudflare production stack as the official production.
-4. Optionally update DNS / custom domain to the Cloudflare Pages production deployment.
-5. Add **auth/access control** before broad exposure (currently none — see risk note below).
-6. Keep Vercel + Supabase running in parallel as rollback for **at least 1–2 weeks**.
+1. ✅ Final D1 production refresh from Supabase (read-only export, smoke tests excluded).
+2. ✅ Production Worker CORS includes the official prod origin
+   `https://task-management-system-3nm.pages.dev`; production Worker redeployed.
+3. ✅ Backup tag `v0.1.0-vercel-supabase-before-cloudflare-cutover` on the pre-cutover `main`.
+4. ✅ Merge `cloudflare/full-migration` → `main` (PR, normal merge).
+5. ✅ Official Cloudflare production frontend deployed via **Deploy Cloudflare Pages
+   Production** → `https://task-management-system-3nm.pages.dev`.
+6. ◻️ **Kept as rollback:** Vercel + Supabase remain live and untouched (run in parallel
+   ≥ 1–2 weeks). No DNS/custom domain changed. No auth added (accepted risk).
+7. ◻️ Later: optional custom domain; add auth/access control before broad exposure; then
+   plan removal of the old Vercel/Supabase paths.
 
 ## 5. Rollback
 
-Vercel + Supabase are **untouched** and remain authoritative until cutover is verified.
-Rollback = point users back at the Vercel URL / keep DNS unchanged. D1/Worker production are
-additive and disposable until cutover.
+Vercel + Supabase are **untouched** and fully usable. If a Cloudflare issue occurs:
+
+- Send users to the **Vercel** URL (`https://task-management-system-gray-beta.vercel.app`) —
+  it still serves the app against **Supabase** (the source of truth that was exported).
+- No DNS change was made, so nothing needs reverting at the DNS layer.
+- The Cloudflare stack (Pages/Worker/D1) is additive and can be left or rolled back
+  independently; the pre-cutover `main` is tagged
+  `v0.1.0-vercel-supabase-before-cloudflare-cutover`.
+
+**Observation period:** keep Vercel + Supabase alive for **at least 1–2 weeks** before any
+cleanup of the old paths.
 
 ## 6. ⚠️ Risk note (accepted)
 

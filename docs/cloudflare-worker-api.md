@@ -119,6 +119,16 @@ Explicit allow-list (no wildcard, no credentials):
 Methods: `GET, POST, PATCH, OPTIONS`. Headers: `Content-Type`. No credentials. Preflight
 `OPTIONS` returns `204` with the CORS headers.
 
+Allow-list (`worker/src/index.ts` `ALLOWED_ORIGINS`):
+
+- `https://task-management-system-3nm.pages.dev` — **official Cloudflare production**
+- `https://production-candidate.task-management-system-3nm.pages.dev` — candidate/validation
+- `https://staging.task-management-system-3nm.pages.dev` — staging
+- `http://localhost:5173` — local dev
+
+Any future custom domain must be added here. **Auth risk remains** (no app auth yet —
+accepted by the user; must be addressed before broad exposure).
+
 ## Security limitation (important)
 
 There is **no app-level authentication yet**. The Worker holds full read/write access to the
