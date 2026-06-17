@@ -54,9 +54,12 @@ On the production-candidate URL, confirm:
 4. ✅ Merge `cloudflare/full-migration` → `main` (PR, normal merge).
 5. ✅ Official Cloudflare production frontend deployed via **Deploy Cloudflare Pages
    Production** → `https://task-management-system-3nm.pages.dev`.
-6. ◻️ **Kept as rollback:** Vercel + Supabase remain live and untouched (run in parallel
+6. ✅ **Continuous deploy enabled:** pushes to `main` now auto-deploy the production frontend
+   (always) and the production Worker (when `worker/**` changes). **D1 Production Import stays
+   manual (`workflow_dispatch`) only** — code pushes never touch D1 data.
+7. ◻️ **Kept as rollback:** Vercel + Supabase remain live and untouched (run in parallel
    ≥ 1–2 weeks). No DNS/custom domain changed. No auth added (accepted risk).
-7. ◻️ Later: optional custom domain; add auth/access control before broad exposure; then
+8. ◻️ Later: optional custom domain; add auth/access control before broad exposure; then
    plan removal of the old Vercel/Supabase paths.
 
 ## 5. Rollback

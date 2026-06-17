@@ -29,15 +29,45 @@ If you want data persisted in a shared database, see `SETUP_REQUIRED_FROM_USER.m
 
 ## Deployment / Production
 
-- **Official production (Cloudflare):** `https://task-management-system-3nm.pages.dev`
-  → Worker `task-management-api-production` → Cloudflare **D1** `task-management-production`.
-  Deployed via GitHub Actions (`workflow_dispatch`): `deploy-cloudflare-pages-production.yml`,
-  `deploy-cloudflare-worker-production.yml`, `d1-production-import.yml`.
-- **Legacy / rollback (kept live):** Vercel (`https://task-management-system-gray-beta.vercel.app`)
-  + Supabase. Retained as rollback for ≥ 1–2 weeks post-cutover; not yet removed.
-- No custom domain configured; no app auth yet (accepted risk — see
-  `docs/cloudflare-worker-api.md`). Full details: `docs/cloudflare-setup.md`,
-  `docs/production-cutover-checklist.md`.
+**Official production stack (Cloudflare):**
+
+```
+https://task-management-system-3nm.pages.dev
+  → Worker  https://task-management-api-production.sw-590.workers.dev   (task-management-api-production)
+  → D1      task-management-production  (id a5f4558a-d8db-41ba-9d2a-a5cd9210eb16)
+```
+
+Staging stack (validation): `https://staging.task-management-system-3nm.pages.dev` → staging
+Worker `task-management-api` → D1 `task-management-staging`.
+
+### Operational quick guide
+
+1. **Official site:** https://task-management-system-3nm.pages.dev
+2. **Update code (auto-deploys to Cloudflare):**
+   ```bash
+   git checkout main && git pull origin main
+   # ...make changes...
+   npm run build           # verify locally
+   git commit -am "..." && git push origin main
+   ```
+   Pushing to `main` runs GitHub Actions → **Deploy Cloudflare Pages Production** (always) and
+   **Deploy Cloudflare Worker Production** (when `worker/**` changes) → the live site updates
+   automatically. A failed build blocks the deploy.
+3. **Update tasks/people (data):** just use the website — runtime changes go
+   **Browser → Worker → D1 production** and are **not** pushed to GitHub. No deploy needed.
+4. **Deploy monitoring:** GitHub → Actions → *Deploy Cloudflare Pages Production* /
+   *Deploy Cloudflare Worker Production*.
+5. **Rollback (kept live):** Vercel (`https://task-management-system-gray-beta.vercel.app`) +
+   Supabase remain available — use them if a Cloudflare issue occurs. **Do not delete for
+   ≥ 1–2 weeks.** No DNS change was made, so rollback = use the Vercel URL.
+6. **Manual-only (never automatic):** **D1 Production Import**
+   (`d1-production-import.yml`, `workflow_dispatch`) — it can overwrite D1 production data, so a
+   normal code push must never run it. Same for staging imports.
+7. **Future:** custom domain · auth/access control (none yet — accepted risk, see
+   `docs/cloudflare-worker-api.md`) · cleanup of the old Vercel/Supabase stack (later).
+
+Full details: `docs/cloudflare-setup.md`, `docs/production-cutover-checklist.md`,
+`docs/cloudflare-worker-api.md`, `docs/d1-migration.md`.
 
 ## Scripts
 

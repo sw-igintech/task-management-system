@@ -108,6 +108,9 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    frontend `https://task-management-system-3nm.pages.dev` → production Worker → D1 production.
    **Vercel + Supabase remain live, untouched, as rollback (≥ 1–2 weeks). No DNS/custom-domain
    change. No auth/email added.** See `docs/production-cutover-checklist.md`.*
+   ✅ *Continuous deploy: pushes to `main` auto-deploy the production frontend (always) and the
+   production Worker (on `worker/**` changes). D1 production import remains manual-only. Runtime
+   data lives in D1 (Browser → Worker → D1), not in git.*
 8. **Rollback ready** — if anything regresses, repoint DNS/config back to Vercel + Supabase.
    Decommission the old stack only after a stable bake-in period.
 

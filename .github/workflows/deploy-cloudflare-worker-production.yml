@@ -1,18 +1,28 @@
 name: Deploy Cloudflare Worker Production
 
-# Deploys the PRODUCTION-CANDIDATE Worker `task-management-api-production`, bound to the D1
-# PRODUCTION database (see worker/wrangler.toml [env.production]). This is a separate Worker
-# from the staging `task-management-api` and does NOT touch it. No DNS/routes, no custom
-# domain, no Supabase at runtime. MANUAL trigger only — never auto/never on main.
+# Deploys the production Worker `task-management-api-production`, bound to the D1 PRODUCTION
+# database (see worker/wrangler.toml [env.production]). It is a SEPARATE Worker from the
+# staging `task-management-api` and never touches it (`--env production` targets the prod
+# name + prod D1 binding only). No DNS/routes, no custom domain, no Supabase at runtime.
 #
-# Prereq: run "D1 Production Import" first, then set the real database_id in
-# worker/wrangler.toml [[env.production.d1_databases]].
+# Runs automatically on push to main when Worker code/config changes, plus manual dispatch.
+# It deploys code only — it never imports/overwrites D1 data.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-cloudflare-worker-production.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Prevent overlapping production Worker deploys; let the newest push win.
+concurrency:
+  group: worker-production
+  cancel-in-progress: true
 
 jobs:
   deploy:
