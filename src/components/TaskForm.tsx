@@ -45,6 +45,8 @@ const taskSchema = z.object({
   // value must have one selected before saving).
   opened_by_person_id: z.string().min(1, 'Opened by is required'),
   due_date: z.string().optional().nullable(),
+  // Actual closure date — optional, distinct from due_date.
+  closed_date: z.string().optional().nullable(),
   notes: z.string().optional(),
   description: z.string().optional(),
 });
@@ -54,14 +56,14 @@ export type TaskFormData = z.infer<typeof taskSchema>;
 // Text fields that receive the automatic dated traceability prefix.
 type TraceField = 'notes' | 'description';
 
-// Builds the "(DD.MM.YY) " trace prefix (parentheses + one trailing space).
-// e.g. 2026-06-17 -> "(17.06.26) ". It is plain, editable text saved inline in
-// the field — not a separate component, lock, or DB column.
-function formatTraceDate(d: Date): string {
+// Builds the bullet-style trace prefix "• (DD.MM.YY) " (bullet + space + date in
+// parentheses + one trailing space). e.g. 2026-06-17 -> "• (17.06.26) ". It is
+// plain, editable text saved inline in the field — not a component, lock, or DB column.
+function formatTracePrefix(d: Date): string {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yy = String(d.getFullYear() % 100).padStart(2, '0');
-  return `(${dd}.${mm}.${yy}) `;
+  return `• (${dd}.${mm}.${yy}) `;
 }
 
 interface TaskFormProps {
@@ -91,6 +93,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       responsible_person_id: task?.responsible_person_id ?? '',
       opened_by_person_id: task?.opened_by_person_id ?? '',
       due_date: task?.due_date ?? '',
+      closed_date: task?.closed_date ?? '',
       notes: task?.notes ?? '',
       description: task?.description ?? '',
     },
@@ -106,7 +109,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   // ordinary editable text — the user may delete/keep/ignore it and we never re-add it.
   const tracePrefixDone = useRef<Record<TraceField, boolean>>({ notes: false, description: false });
 
-  // Inserts "(DD.MM.YY) " + the just-typed/pasted text at the cursor, replacing any
+  // Inserts "• (DD.MM.YY) " + the just-typed/pasted text at the cursor, replacing any
   // selection, then restores focus and places the caret right after the typed text.
   const insertTracePrefix = (el: HTMLTextAreaElement, field: TraceField, typed: string) => {
     const start = el.selectionStart ?? el.value.length;
@@ -116,11 +119,29 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     // Put the trace on its own line unless we're at the very start or already right
     // after a newline (keeps existing text intact; predictable for mid-line edits).
     const lead = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-    const head = before + lead + formatTraceDate(new Date()) + typed;
+    const head = before + lead + formatTracePrefix(new Date()) + typed;
     setValue(field, head + after, { shouldDirty: true, shouldTouch: true });
     tracePrefixDone.current[field] = true;
     // setValue updates the uncontrolled textarea's value via RHF's ref; restore the
     // caret on the next frame so it lands after the inserted prefix + typed text.
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(head.length, head.length);
+    });
+  };
+
+  // Enter (without Shift): start a new line with a fresh "• (DD.MM.YY) " bullet and
+  // place the caret after it. Shift+Enter is left to the browser (a plain newline,
+  // for continuing the same bullet across lines).
+  const insertBulletLine = (el: HTMLTextAreaElement, field: TraceField) => {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    const lead = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+    const head = before + lead + formatTracePrefix(new Date());
+    setValue(field, head + after, { shouldDirty: true, shouldTouch: true });
+    tracePrefixDone.current[field] = true;
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(head.length, head.length);
@@ -195,8 +216,11 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     });
   };
 
-  // Combined keydown: when the popup is open it owns Arrow/Enter/Tab/Escape; otherwise
-  // the existing trace-prefix logic runs (and plain Enter keeps making newlines).
+  // Combined keydown:
+  //  1. When the mention popup is open it owns Arrow/Enter/Tab/Escape.
+  //  2. Enter (no Shift) starts a new dated "• (DD.MM.YY) " bullet line.
+  //  3. Shift+Enter falls through to the browser (plain newline, same bullet).
+  //  4. Otherwise the first-printable-char trace-prefix logic runs.
   const handleTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
     if (mention && mention.field === field && suggestions.length > 0) {
@@ -204,6 +228,15 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => (i - 1 + suggestions.length) % suggestions.length); return; }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectSuggestion(suggestions[activeIndex]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setMention(null); return; }
+    }
+    if (
+      e.key === 'Enter' && !e.shiftKey &&
+      !e.nativeEvent.isComposing && e.keyCode !== 229
+    ) {
+      // New dated bullet entry. Shift+Enter is intentionally NOT handled → plain newline.
+      e.preventDefault();
+      insertBulletLine(e.currentTarget, field);
+      return;
     }
     handleTraceKeyDown(e);
   };
@@ -264,31 +297,41 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
         />
       </div>
 
-      <Select
-        label="Opened by *"
-        {...register('opened_by_person_id')}
-        error={errors.opened_by_person_id?.message}
-      >
-        <option value="">Select opener</option>
-        {people.map(p => (
-          <option key={p.id} value={p.id}>{p.name}</option>
-        ))}
-      </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <Input
+          label="Closed Date"
+          type="date"
+          {...register('closed_date')}
+          error={errors.closed_date?.message}
+        />
 
+        <Select
+          label="Opened by *"
+          {...register('opened_by_person_id')}
+          error={errors.opened_by_person_id?.message}
+        >
+          <option value="">Select opener</option>
+          {people.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </Select>
+      </div>
+
+      {/* Description first, then Notes (kept as two separate fields). */}
       <div className="relative">
         <Textarea
-          label="Notes"
-          {...notesReg}
+          label="Description"
+          {...descReg}
           onFocus={handleTraceFocus}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
-          onBlur={e => { notesReg.onBlur(e); setMention(m => (m?.field === 'notes' ? null : m)); }}
-          placeholder="Additional notes... (type @ to reference a task)"
-          rows={4}
+          onBlur={e => { descReg.onBlur(e); setMention(m => (m?.field === 'description' ? null : m)); }}
+          placeholder="Task description / what needs to be done... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task)"
+          rows={3}
         />
-        {mention?.field === 'notes' && (
+        {mention?.field === 'description' && (
           <MentionSuggestions
             suggestions={suggestions}
             activeIndex={activeIndex}
@@ -300,18 +343,18 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
 
       <div className="relative">
         <Textarea
-          label="Description"
-          {...descReg}
+          label="Notes"
+          {...notesReg}
           onFocus={handleTraceFocus}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
-          onBlur={e => { descReg.onBlur(e); setMention(m => (m?.field === 'description' ? null : m)); }}
-          placeholder="Detailed description (optional)... (type @ to reference a task)"
-          rows={2}
+          onBlur={e => { notesReg.onBlur(e); setMention(m => (m?.field === 'notes' ? null : m)); }}
+          placeholder="Updates / comments / ongoing log... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task)"
+          rows={4}
         />
-        {mention?.field === 'description' && (
+        {mention?.field === 'notes' && (
           <MentionSuggestions
             suggestions={suggestions}
             activeIndex={activeIndex}

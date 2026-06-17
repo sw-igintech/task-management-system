@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- enforces it as required for newly created and edited tasks.
   opened_by_person_id UUID REFERENCES people(id) ON DELETE SET NULL,
   due_date DATE,
+  -- Actual closure date (distinct from due_date, the planned target). Nullable;
+  -- set manually in the UI or mapped from the CSV "close date" column.
+  closed_date DATE,
   type TEXT,
   source_file TEXT,
   source_page INTEGER,

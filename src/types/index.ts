@@ -25,6 +25,8 @@ export interface Task {
   opened_by_person_id?: string | null;
   opened_by_person?: Person | null;
   due_date?: string | null;
+  // Actual closure date (distinct from due_date, the planned target). Optional.
+  closed_date?: string | null;
   type?: string;
   source_file?: string;
   source_page?: number;
@@ -47,5 +49,5 @@ export interface TaskFilters {
   due_this_week: boolean;
 }
 
-export type SortField = 'task_number' | 'due_date' | 'priority' | 'responsible_person' | 'status' | 'updated_at' | 'title';
+export type SortField = 'task_number' | 'due_date' | 'closed_date' | 'priority' | 'responsible_person' | 'status' | 'updated_at' | 'title';
 export type SortDirection = 'asc' | 'desc';

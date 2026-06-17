@@ -64,8 +64,10 @@ opens a suggestion popup below the textarea — like @-mentioning a person in Sl
   lands right after it and focus stays in the textarea. The saved text is **still plain text**
   — no rich object, no markdown/HTML, no DB column. The read-only renderer linkifies it later
   (see above). Notes saved earlier with the bare `@139` form still render and link unchanged.
-- **Works with the dated prefix:** if `@` is your first character, the auto prefix still fires
-  first → `(DD.MM.YY) @`, and the popup opens as you type digits → `(DD.MM.YY) @139`.
+- **Available in both Description and Notes** (the autocomplete handlers are on both fields).
+- **Works with the dated bullet prefix:** if `@` is your first character, the auto prefix still
+  fires first → `• (DD.MM.YY) @`, and the popup opens as you type digits → `• (DD.MM.YY) @139`.
+  After pressing Enter (new bullet) then `@`, autocomplete works on the new line too.
 
 ## What happens when you click a reference
 

@@ -26,11 +26,29 @@ export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: Tas
   return (
     <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Left: details */}
+        {/* Left: details — Description first, then Notes. Both always shown (separate
+            fields); a task with only one of them still displays correctly. */}
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-2">
             <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
-            <div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-500 mb-0.5">Description</p>
+              {task.description ? (
+                <TaskTextWithLinks
+                  text={task.description}
+                  getTaskByNumber={getTaskByNumber}
+                  onReference={onTaskReference}
+                  className="text-sm text-gray-700"
+                />
+              ) : (
+                <span className="text-sm text-gray-400 italic">No description</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
+            <div className="min-w-0">
               <p className="text-xs font-medium text-gray-500 mb-0.5">Notes</p>
               {task.notes ? (
                 <TaskTextWithLinks
@@ -44,21 +62,6 @@ export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: Tas
               )}
             </div>
           </div>
-
-          {task.description && (
-            <div className="flex items-start gap-2">
-              <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
-              <div>
-                <p className="text-xs font-medium text-gray-500 mb-0.5">Description</p>
-                <TaskTextWithLinks
-                  text={task.description}
-                  getTaskByNumber={getTaskByNumber}
-                  onReference={onTaskReference}
-                  className="text-sm text-gray-700"
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Right: metadata */}
@@ -98,6 +101,13 @@ export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: Tas
             <span className={overdue ? 'date-overdue text-sm' : 'text-sm text-gray-700'}>
               {task.due_date ? formatDate(task.due_date) : '—'}
               {overdue && ' (overdue)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar size={13} className="text-gray-400" />
+            <span className="text-xs text-gray-500 w-20 shrink-0">Closed date</span>
+            <span className="text-sm text-gray-700">
+              {task.closed_date ? formatDate(task.closed_date) : '—'}
             </span>
           </div>
           <div className="flex items-center gap-2">

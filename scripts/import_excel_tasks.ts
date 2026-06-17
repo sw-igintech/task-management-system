@@ -169,6 +169,7 @@ interface ColumnMap {
   notes: number;
   responsible: number;
   due_date: number;
+  closed_date: number;
   type: number;
 }
 
@@ -182,6 +183,7 @@ function buildColumnMap(headers: string[]): ColumnMap {
     notes: -1,
     responsible: -1,
     due_date: -1,
+    closed_date: -1,
     type: -1,
   };
 
@@ -207,6 +209,8 @@ function buildColumnMap(headers: string[]): ColumnMap {
     )
       map.responsible = idx;
     if (map.due_date === -1 && h.startsWith('due')) map.due_date = idx;
+    // "close date" / "closed date" → closed_date (distinct from due date).
+    if (map.closed_date === -1 && h.startsWith('close')) map.closed_date = idx;
     if (map.type === -1 && h === 'type') map.type = idx;
     // description only if it's NOT the title column and not "task description"
     if (
@@ -333,6 +337,7 @@ interface ParsedTask {
   priority: number;
   responsible: string | null;
   due_date: string | null;
+  closed_date: string | null;
   type: string | null;
   source_file: string;
   source_raw_text: string;
@@ -395,6 +400,10 @@ function parseTasks(rows: string[][], sourceFile: string): ParseResult {
     const { value: due_date, warned: dueWarned } = normDueDate(dueRaw);
     if (dueWarned) bump('due_date_invalid');
 
+    const closedRaw = columnMap.closed_date >= 0 ? get(cells, columnMap.closed_date) : '';
+    const { value: closed_date, warned: closedWarned } = normDueDate(closedRaw);
+    if (closedRaw && closedWarned) bump('closed_date_invalid');
+
     const responsibleRaw = get(cells, columnMap.responsible);
     const responsible = responsibleRaw || null;
     if (!responsible) bump('responsible_missing');
@@ -421,6 +430,7 @@ function parseTasks(rows: string[][], sourceFile: string): ParseResult {
       priority,
       responsible,
       due_date,
+      closed_date,
       type,
       source_file: sourceFile,
       source_raw_text: JSON.stringify({
@@ -503,6 +513,7 @@ function printParseReport(file: string, r: ParseResult, existingTaskCount: numbe
   console.log(`   notes       -> col ${r.columnMap.notes}`);
   console.log(`   responsible -> col ${r.columnMap.responsible}`);
   console.log(`   due_date    -> col ${r.columnMap.due_date}`);
+  console.log(`   closed_date -> col ${r.columnMap.closed_date}`);
   console.log(`   type        -> col ${r.columnMap.type}`);
   console.log(`Raw non-empty data rows  : ${r.rawRowCount}`);
   console.log(`Valid tasks (deduped)    : ${r.tasks.length}`);
@@ -707,6 +718,7 @@ async function main() {
     priority: t.priority,
     responsible_person_id: t.responsible ? peopleMap.get(t.responsible.toLowerCase()) ?? null : null,
     due_date: t.due_date,
+    closed_date: t.closed_date,
     type: t.type,
     source_file: t.source_file,
     source_raw_text: t.source_raw_text,

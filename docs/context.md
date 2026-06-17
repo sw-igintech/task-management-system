@@ -95,7 +95,8 @@ Set in `.env` locally (gitignored). Set `VITE_*` vars in Vercel project settings
 | `priority` | INTEGER | 1 (High) – 5 (Low), CHECK BETWEEN 1 AND 5 |
 | `responsible_person_id` | UUID FK → people.id | ON DELETE SET NULL, **nullable** — who owns/performs the task (Assigned to) |
 | `opened_by_person_id` | UUID FK → people.id | ON DELETE SET NULL, **nullable** — who opened/requested the task (Opened by). App-required for new/edited tasks; see §10 |
-| `due_date` | DATE | nullable |
+| `due_date` | DATE | nullable — planned target date |
+| `closed_date` | DATE | nullable — **actual** closure date (distinct from due_date); set manually or mapped from CSV "close date". See §10c |
 | `type` | TEXT | optional |
 | `source_file` | TEXT | origin filename |
 | `source_page` | INTEGER | (legacy from PDF import) |
@@ -235,28 +236,33 @@ See `docs/sync-tasks.md` for the full operator guide, field mapping, and restore
 
 ---
 
-## 9c. Automatic dated text traceability (Notes & Description)
+## 9c. Automatic bullet-dated text traceability (Description & Notes)
 
-When the user starts typing in the **Notes** or **Description** textarea, the app
-auto-inserts today's date as a plain-text prefix at the cursor, before the first typed
+When the user starts typing in the **Description** or **Notes** textarea, the app
+auto-inserts a Word-style **bullet + date** prefix at the cursor, before the first typed
 character. Lives in `src/components/TaskForm.tsx`, so it works identically in the Add Task
-modal and the inline expanded-row editor. **Applies to both Notes and Description.**
+modal and the inline expanded-row editor. **Description and Notes are kept as two separate
+fields/columns** (never merged); this applies to **both**.
 
-- **Format:** `(DD.MM.YY) ` — parentheses + 2-digit day.month.year + one trailing space
-  (e.g. `2026-06-17` → `(17.06.26) `). Built by `formatTraceDate(new Date())`.
+- **Format:** `• (DD.MM.YY) ` — a real bullet `•`, space, date in parentheses (2-digit
+  day.month.year), one trailing space (e.g. `2026-06-17` → `• (17.06.26) `). Built by
+  `formatTracePrefix(new Date())`.
+- **Enter vs Shift+Enter:** **Enter** starts a **new dated bullet line** (`\n• (DD.MM.YY) `,
+  via `insertBulletLine`); **Shift+Enter** inserts a **plain newline** only (continue the same
+  bullet). Plain Enter no longer just makes a newline — it makes a new bullet.
 - **Plain editable text** — saved inline inside the existing `notes`/`description` text.
-  **Not** a DB column, not a locked component, not stored separately. No schema/migration.
-- **Not mandatory** — the user can delete/edit/ignore it; nothing validates it; it is not
-  required for saving and is **not re-inserted** if deleted within the same interaction.
-- **Inserted once per focus interaction** (a per-field flag reset on `focus`), on the first
-  printable keystroke — never repeated per keystroke. Re-focusing for a new edit inserts a
-  fresh dated line.
-- **Trigger:** single printable chars only (keydown, `e.key.length === 1`) + first paste.
-  Ignored: Enter-alone (newline), Backspace/Delete, arrows/Home/End/PageUp-Down, Tab/Esc,
-  modifiers, and Ctrl/Cmd/Alt shortcuts. IME/composition (incl. CJK / dead keys) is skipped
-  so Hebrew/English direct typing works; the prefix sits on its own line unless at start of
-  field or right after a newline. Selected text is replaced by `prefix + typed char`.
-- Full details, edge-case table, and the IME limitation: see `docs/task-text-traceability.md`.
+  **Not** a DB column, not a locked component, not stored separately. No schema change for
+  traceability.
+- **Not mandatory** — the user can delete/edit/ignore it; nothing validates it; not required
+  for saving; **not re-inserted** if deleted within the same interaction.
+- **Anti-repeat:** the first-char prefix is inserted once per focus interaction (per-field flag
+  reset on `focus`); Enter adds a new bullet explicitly. Never `• (..) • (..)` from typing.
+- **Trigger:** first single printable char (keydown, `e.key.length === 1`) + Enter + first
+  paste. Ignored: Shift+Enter (plain newline), Backspace/Delete, arrows/Home/End/PageUp-Down,
+  Tab/Esc, modifiers, Ctrl/Cmd/Alt shortcuts, and IME/composition (CJK / dead keys) so
+  Hebrew/English direct typing works. The prefix sits on its own line unless at start of field
+  or right after a newline. Selected text is replaced by `prefix + typed char`.
+- Full details + edge-case table: see `docs/task-text-traceability.md`.
 
 ---
 
@@ -290,8 +296,8 @@ Human-readable task keys plus `@number` cross-task links. Full guide:
   `@TASK-<number>` + trailing space** (replaces the typed token) via RHF `setValue` — **no DB
   column, no rich object/markdown/HTML**. The renderer accepts `@123`, `@TASK-123` and
   `@task-123` interchangeably, so older notes saved with the bare `@123` form still link. Works
-  alongside the dated prefix (`@` as the first char → `(DD.MM.YY) @`, then the popup filters as
-  digits are typed). Suggestion source is the full loaded task list threaded
+  alongside the bullet-dated prefix (`@` as the first char → `• (DD.MM.YY) @`, then the popup
+  filters as digits are typed). Suggestion source is the full loaded task list threaded
   `TasksPage → TaskTable → TaskRow → TaskForm` (and directly to the Add-Task modal) as
   `mentionTasks` — no per-keystroke Supabase query.
 - **BY PERSON sidebar merges with current filters (2026-06-17):** clicking a person under
@@ -316,6 +322,48 @@ Human-readable task keys plus `@number` cross-task links. Full guide:
   is just absent). Verify after running:
   - `SELECT COUNT(*) FROM tasks WHERE task_number IS NULL;` → expect `0`
   - `SELECT COUNT(*) total, COUNT(DISTINCT task_number) uniq FROM tasks;` → `total = uniq`
+
+---
+
+## 10c. Description/Notes field order + Closed Date (2026-06-17)
+
+### Description & Notes stay separate; Description first
+- Two distinct fields/columns, **never merged**: **Description** = what needs to be done /
+  general context; **Notes** = updates / comments / ongoing log.
+- **Order is Description then Notes** in the Add Task modal, the inline edit form, and the
+  read-only expanded view.
+- Both always render in the expanded view with placeholders when empty (`No description` /
+  `No notes`), so a task with only one of them still shows correctly. No data was migrated or
+  merged.
+- TaskForm field order: Title → Status/Priority → Responsible/Due Date → Closed Date/Opened by
+  → Description → Notes.
+
+### Closed Date (`closed_date`)
+- New nullable `tasks.closed_date DATE` — the **actual** closure date, distinct from `due_date`
+  (planned target). `Task.closed_date?: string | null`.
+- **UI:** date input in TaskForm **after Due Date** (paired with Opened by); new **Closed**
+  column in the task table **after Due Date** (sortable); expanded metadata shows **Closed date**
+  right after **Due date**. Empty → `—`.
+- **No automation:** `closed_date` is **not** auto-set when status becomes Done; it is set
+  manually (or mapped from CSV). Saving is not blocked when Done has no closed_date.
+- **Flow:** loaded/inserted/updated as a normal column (`useTasks.toDbPayload` passes it
+  through; `TasksPage` add/update handlers send `closed_date`); mock/localStorage stores it via
+  the normal spread. `TasksPage` add/update map `data.closed_date || null`.
+- **CSV import/sync:** a CSV `close date` / `closed date` column maps to `closed_date`
+  (`columnMap.closed_date`, matched by `startsWith('close')`, parsed with the existing date
+  normalizer; empty/invalid → `null`). Distinct from `due` (`startsWith('due')`). The sync
+  script also diffs/updates `closed_date`. See `docs/import-tasks.md` / `docs/sync-tasks.md`.
+
+### Migration / apply instructions
+- **File:** `supabase/add_closed_date_to_tasks.sql` (idempotent):
+  `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS closed_date date;`
+- **Apply status: NOT applied automatically** — DDL can't run through the anon key/PostgREST.
+  **Run it manually** in the Supabase **SQL Editor**.
+- **Until applied:** the column does not exist, so saving a task (insert/update) that includes
+  `closed_date` **will fail** at Supabase. Run the SQL before using the app in production.
+  Verify:
+  - `SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='closed_date';` → `closed_date`
+  - `SELECT COUNT(*) FROM tasks WHERE closed_date IS NOT NULL;`
 
 ---
 

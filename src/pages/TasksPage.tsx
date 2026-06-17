@@ -86,6 +86,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
       responsible_person_id: data.responsible_person_id || undefined,
       opened_by_person_id: data.opened_by_person_id,
       due_date: data.due_date || null,
+      closed_date: data.closed_date || null,
       notes: data.notes,
       description: data.description,
     });
@@ -101,6 +102,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
       responsible_person_id: data.responsible_person_id || undefined,
       opened_by_person_id: data.opened_by_person_id,
       due_date: data.due_date || null,
+      closed_date: data.closed_date || null,
       notes: data.notes,
       description: data.description,
     });

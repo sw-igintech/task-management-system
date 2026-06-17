@@ -126,6 +126,15 @@ export function TaskRow({
           )}
         </td>
 
+        {/* Closed date */}
+        <td className="px-3 py-3 whitespace-nowrap">
+          {task.closed_date ? (
+            <span className="text-sm text-gray-600">{formatDate(task.closed_date)}</span>
+          ) : (
+            <span className="text-sm text-gray-400">—</span>
+          )}
+        </td>
+
         {/* Actions */}
         <td
           className="px-3 py-3 whitespace-nowrap"
@@ -168,7 +177,7 @@ export function TaskRow({
       {/* Expanded row: inline edit form when editing, otherwise read-only details */}
       {isExpanded && (
         <tr>
-          <td colSpan={8} className="p-0">
+          <td colSpan={9} className="p-0">
             {isEditing ? (
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
                 <div className="flex items-center justify-between mb-3">

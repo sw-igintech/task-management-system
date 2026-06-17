@@ -7,27 +7,47 @@
 ## What it does
 
 When you click into the **Notes** or **Description** textarea and type your first
-character, the app inserts a date prefix immediately before that character:
+character, the app inserts a **bullet + date** prefix immediately before that character:
 
 ```
-(17.06.26) c
+• (17.06.26) c
 ```
 
 …then you keep typing normally:
 
 ```
-(17.06.26) checked with Amit
+• (17.06.26) checked with Amit, waiting for answer
 ```
 
 There is **no button, checkbox, or toggle** — insertion is fully automatic, exactly once
-per editing interaction.
+per editing interaction (and again on each Enter, see below).
 
-## Date format
+## Bullet + date format
 
-`(DD.MM.YY) ` — parentheses around `day.month.year` (2-digit), followed by **one space**.
+`• (DD.MM.YY) ` — a real bullet `•`, a space, the date in parentheses (2-digit
+`day.month.year`), then **one space**.
 
-- `2026-06-17` → `(17.06.26) `
-- Built by `formatTraceDate(new Date())` in `src/components/TaskForm.tsx`.
+- `2026-06-17` → `• (17.06.26) `
+- Built by `formatTracePrefix(new Date())` in `src/components/TaskForm.tsx`.
+
+## Enter vs Shift+Enter (Word-style bullets)
+
+Inside Description/Notes:
+
+- **Enter** = start a **new dated bullet entry** on the next line: a newline plus a fresh
+  `• (DD.MM.YY) `, caret placed right after it.
+  ```
+  • (17.06.26) first update
+  • (17.06.26) ▮            ← caret here after pressing Enter
+  ```
+- **Shift+Enter** = a **plain newline** only (no bullet/date) — to continue the same bullet
+  across multiple lines:
+  ```
+  • (17.06.26) first line
+  continued line without new bullet
+  ```
+
+Applies to **both Description and Notes** (the same handlers are on both textareas).
 
 ## It is plain, editable text
 
@@ -42,45 +62,49 @@ per editing interaction.
 
 ## When it inserts (anti-repeat rule)
 
-- Inserted **once per focus interaction**, on the **first printable keystroke** after you
-  focus/click into the field.
-- A per-field flag (`tracePrefixDone`) is reset on `focus`, set after one insertion. So you
-  never get `(17.06.26) (17.06.26) …` while typing.
+- Inserted **once per focus interaction** on the **first printable keystroke**, **and** again
+  each time you press **Enter** (new bullet line).
+- A per-field flag (`tracePrefixDone`) is reset on `focus`, set after the first insertion. So
+  you never get `• (17.06.26) • (17.06.26) …` from ordinary typing.
 - Delete the prefix and keep typing in the **same** interaction → it is **not** re-added.
 - Blur and later focus the field again for a **new** update → it inserts again (a fresh
-  dated line for the new edit).
+  dated bullet for the new edit).
 
 ## What does NOT trigger insertion
 
-Implemented via `keydown` — only single printable characters (`e.key.length === 1`) trigger
-it. These never trigger a prefix:
+Implemented via `keydown` — only single printable characters (`e.key.length === 1`) start the
+first bullet, and **Enter** starts a new bullet. These never trigger a prefix:
 
 - Modifiers & navigation: Shift, Ctrl, Alt, Meta, Tab, Escape, Arrow keys, Home/End,
   PageUp/PageDown.
 - Editing-without-typing: Backspace, Delete.
-- **Enter alone** (new line) — `e.key === 'Enter'` has length > 1, so it is ignored.
+- **Shift+Enter** — inserts a plain newline only (continue the same bullet).
 - Shortcuts: Ctrl/Cmd/Alt combos (Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z, …).
+- IME composition (see below).
 
 ## Paste
 
 Pasting as the **first** content change of a focus interaction inserts the prefix before the
 pasted text:
 
-- Paste `checked with Amit` → `(17.06.26) checked with Amit`.
+- Paste `checked with Amit` → `• (17.06.26) checked with Amit`.
 - Handled by an `onPaste` handler (preventDefault + manual insert).
 
 ## Cursor / newline placement
 
-`insertTracePrefix()` inserts at the current selection (`selectionStart`/`selectionEnd`):
+`insertTracePrefix()` (first char) and `insertBulletLine()` (Enter) insert at the current
+selection (`selectionStart`/`selectionEnd`):
 
 | Situation | Result |
 |---|---|
-| Empty field, type `a` | `(17.06.26) a` |
-| End of `old note` (no trailing newline), type `n` | `old note`⏎`(17.06.26) n` |
-| End of `old note\n` (already ends with newline), type `n` | `old note`⏎`(17.06.26) n` |
-| Start of an empty line | `(17.06.26) ` + typed char |
-| Middle of a line | A newline is added before the prefix, then `(17.06.26) ` + typed char, then the remaining text — surrounding text is preserved |
-| **Text selected**, then type | The selection is **replaced** with `(17.06.26) ` + typed char (documented, accepted behavior) |
+| Empty field, type `a` | `• (17.06.26) a` |
+| End of `old note` (no trailing newline), type `n` | `old note`⏎`• (17.06.26) n` |
+| End of `old note\n` (already ends with newline), type `n` | `old note`⏎`• (17.06.26) n` |
+| Start of an empty line | `• (17.06.26) ` + typed char |
+| Middle of a line | A newline is added before the prefix, then `• (17.06.26) ` + typed char, then the remaining text — surrounding text is preserved |
+| **Text selected**, then type | The selection is **replaced** with `• (17.06.26) ` + typed char (documented, accepted behavior) |
+| **Enter** at end of a bullet | newline + `• (17.06.26) `, caret after it |
+| **Shift+Enter** | plain newline only, no bullet/date |
 
 Rule: the prefix goes on its **own line** unless the cursor is at the very start of the field
 or already right after a newline. The caret is restored to just after the inserted prefix +

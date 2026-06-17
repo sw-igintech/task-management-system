@@ -171,6 +171,7 @@ interface ColumnMap {
   notes: number;
   responsible: number;
   due_date: number;
+  closed_date: number;
   type: number;
   sync_id: number;
 }
@@ -185,6 +186,7 @@ function buildColumnMap(headers: string[]): ColumnMap {
     notes: -1,
     responsible: -1,
     due_date: -1,
+    closed_date: -1,
     type: -1,
     sync_id: -1,
   };
@@ -211,6 +213,8 @@ function buildColumnMap(headers: string[]): ColumnMap {
     )
       map.responsible = idx;
     if (map.due_date === -1 && h.startsWith('due')) map.due_date = idx;
+    // "close date" / "closed date" → closed_date (distinct from due date).
+    if (map.closed_date === -1 && h.startsWith('close')) map.closed_date = idx;
     if (map.type === -1 && h === 'type') map.type = idx;
     if (map.sync_id === -1 && (h === 'sync id' || h === 'syncid' || h === 'sync_id')) map.sync_id = idx;
     if (map.description === -1 && h === 'description' && idx !== map.title) map.description = idx;
@@ -327,6 +331,7 @@ interface ParsedTask {
   priority: number;
   responsible: string | null;
   due_date: string | null;
+  closed_date: string | null;
   type: string | null;
   sync_id: string | null;
   source_file: string;
@@ -389,6 +394,10 @@ function parseTasks(rows: string[][], sourceFile: string): ParseResult {
     const { value: due_date, warned: dueWarned } = normDueDate(dueRaw);
     if (dueWarned) bump('due_date_invalid');
 
+    const closedRaw = columnMap.closed_date >= 0 ? get(cells, columnMap.closed_date) : '';
+    const { value: closed_date, warned: closedWarned } = normDueDate(closedRaw);
+    if (closedRaw && closedWarned) bump('closed_date_invalid');
+
     const responsibleRaw = get(cells, columnMap.responsible);
     const responsible = responsibleRaw || null;
     if (!responsible) bump('responsible_missing');
@@ -432,6 +441,7 @@ function parseTasks(rows: string[][], sourceFile: string): ParseResult {
       priority,
       responsible,
       due_date,
+      closed_date,
       type,
       sync_id,
       source_file: sourceFile,
@@ -480,6 +490,7 @@ interface DbTask {
   priority: number;
   responsible_person_id: string | null;
   due_date: string | null;
+  closed_date: string | null;
   type: string | null;
   source_file: string | null;
   source_raw_text: string | null;
@@ -680,6 +691,11 @@ function diffFields(
   const dbDue = db.due_date ? String(db.due_date).slice(0, 10) : null;
   if ((csv.due_date ?? null) !== (dbDue ?? null)) {
     diffs.push({ field: 'due_date', csv: csv.due_date, db: dbDue });
+  }
+
+  const dbClosed = db.closed_date ? String(db.closed_date).slice(0, 10) : null;
+  if ((csv.closed_date ?? null) !== (dbClosed ?? null)) {
+    diffs.push({ field: 'closed_date', csv: csv.closed_date, db: dbClosed });
   }
 
   if (collapse(csv.notes) !== collapse(db.notes ?? '')) {
@@ -991,6 +1007,7 @@ async function main() {
     priority: r.csv.priority,
     responsible_person_id: resolvePerson(r.csv.responsible),
     due_date: r.csv.due_date,
+    closed_date: r.csv.closed_date,
     type: r.csv.type,
     source_file: r.csv.source_file,
     source_raw_text: r.csv.source_raw_text,
@@ -1035,6 +1052,7 @@ async function main() {
       priority: r.csv.priority,
       responsible_person_id: resolvePerson(r.csv.responsible),
       due_date: r.csv.due_date,
+      closed_date: r.csv.closed_date,
       type: r.csv.type,
       source_file: r.csv.source_file,
       source_raw_text: r.csv.source_raw_text,

@@ -40,10 +40,11 @@ const columns: ColumnDef<Task>[] = [
   { id: 'priority', header: 'Priority', accessorKey: 'priority', size: 120 },
   { id: 'responsible_person', header: 'Assigned To', size: 120 },
   { id: 'due_date', header: 'Due Date', accessorKey: 'due_date', size: 120 },
+  { id: 'closed_date', header: 'Closed', accessorKey: 'closed_date', size: 120 },
   { id: 'actions', header: '', size: 80 },
 ];
 
-const SORTABLE_COLUMNS = new Set<string>(['task_number', 'title', 'status', 'priority', 'responsible_person', 'due_date']);
+const SORTABLE_COLUMNS = new Set<string>(['task_number', 'title', 'status', 'priority', 'responsible_person', 'due_date', 'closed_date']);
 
 function SortIcon({ field, sortField, sortDirection }: {
   field: SortField;
@@ -135,6 +136,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
     priority: 'priority',
     responsible_person: 'responsible_person',
     due_date: 'due_date',
+    closed_date: 'closed_date',
   };
 
   if (tasks.length === 0) {

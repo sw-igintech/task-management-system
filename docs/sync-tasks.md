@@ -51,6 +51,7 @@ Secrets: reads `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (and optional
 | `notes` | `Notes` |
 | `responsible_person_id` | `Responsibility` → matched/created in `people` |
 | `due_date` | `Due date` (`dd/mm/yyyy`, `yyyy-mm-dd`, empty, placeholder → null) |
+| `closed_date` | `Close date` / `Closed date` (header `startsWith('close')`; same date parsing; empty/invalid → null) — actual closure date, distinct from `due_date`. Also compared/updated by sync. |
 | `description` | null (no description column in this CSV) |
 | `type` | null (no type column in this CSV) |
 | `source_file` | CSV filename |

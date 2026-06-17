@@ -176,6 +176,10 @@ export function getFilteredTasks(
         valA = a.due_date ?? '9999-99-99';
         valB = b.due_date ?? '9999-99-99';
         break;
+      case 'closed_date':
+        valA = a.closed_date ?? '9999-99-99';
+        valB = b.closed_date ?? '9999-99-99';
+        break;
       case 'updated_at':
         valA = a.updated_at;
         valB = b.updated_at;

@@ -72,7 +72,8 @@ The import refuses to apply if zero valid tasks were parsed.
 | `status` | `Status` |
 | `priority` | `Priority` |
 | `responsible_person_id` | `Responsibility` / `Responsible` / `Owner` / `Assignee` (→ matched/created in `people`) |
-| `due_date` | `Due date` |
+| `due_date` | `Due date` (header `startsWith('due')`) |
+| `closed_date` | `Close date` / `Closed date` (header `startsWith('close')`; same date parsing; empty/invalid → `null`) — actual closure date, distinct from `due_date` |
 | `type` | `Type` |
 | `source_file` | the file name |
 | `source_raw_text` | JSON of the original row values |
