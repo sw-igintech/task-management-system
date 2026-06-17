@@ -10,6 +10,11 @@ name: Deploy Cloudflare Pages Production Preview
 
 on:
   workflow_dispatch:
+  # TEMPORARY (this session only): self-scoped push trigger to register + run once.
+  # Restored to workflow_dispatch-only afterward.
+  push:
+    branches: [cloudflare/full-migration]
+    paths: ['.github/workflows/deploy-cloudflare-pages-production-preview.yml']
 
 permissions:
   contents: read
