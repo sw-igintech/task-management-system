@@ -10,8 +10,17 @@ binding = "DB"
 database_name = "task-management-staging"
 database_id = "e262c9ce-8d5f-46d0-86c7-24030b9e760d"
 
-# No production D1 binding, no routes, no custom domain. task-management-production is
-# intentionally NOT created/bound yet.
-#
-# SECURITY: write endpoints have NO app auth yet — staging/internal only. Add access
-# control before any production exposure.
+# ── Production candidate environment ────────────────────────────────────────
+# Deployed with `wrangler deploy --env production` (manual workflow only). Separate Worker
+# `task-management-api-production` bound to D1 `task-management-production`. Does NOT touch
+# the staging Worker above. No routes, no custom domain. Not a production cutover.
+[env.production]
+name = "task-management-api-production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "task-management-production"
+database_id = "a5f4558a-d8db-41ba-9d2a-a5cd9210eb16"
+
+# SECURITY: write endpoints have NO app auth yet — staging/internal & production-candidate
+# only. Add access control before any broad/production exposure.
