@@ -27,6 +27,18 @@ Open http://localhost:5173 — the app runs immediately with all 63 tasks loaded
 
 If you want data persisted in a shared database, see `SETUP_REQUIRED_FROM_USER.md`.
 
+## Deployment / Production
+
+- **Official production (Cloudflare):** `https://task-management-system-3nm.pages.dev`
+  → Worker `task-management-api-production` → Cloudflare **D1** `task-management-production`.
+  Deployed via GitHub Actions (`workflow_dispatch`): `deploy-cloudflare-pages-production.yml`,
+  `deploy-cloudflare-worker-production.yml`, `d1-production-import.yml`.
+- **Legacy / rollback (kept live):** Vercel (`https://task-management-system-gray-beta.vercel.app`)
+  + Supabase. Retained as rollback for ≥ 1–2 weeks post-cutover; not yet removed.
+- No custom domain configured; no app auth yet (accepted risk — see
+  `docs/cloudflare-worker-api.md`). Full details: `docs/cloudflare-setup.md`,
+  `docs/production-cutover-checklist.md`.
+
 ## Scripts
 
 ### Import / replace tasks from a CSV (or Excel) file
@@ -58,7 +70,9 @@ npx tsx scripts/import_pdf_tasks.ts --import
 
 - [`docs/context.md`](docs/context.md) — full project context and history
 - [`docs/git-workflow.md`](docs/git-workflow.md) — branch model, PR rules, branch protection
-- [`docs/cloudflare-migration-plan.md`](docs/cloudflare-migration-plan.md) — planned migration to Cloudflare (not yet executed)
+- [`docs/cloudflare-migration-plan.md`](docs/cloudflare-migration-plan.md) — planned migration to Cloudflare (in progress: Pages staging)
+- [`docs/cloudflare-setup.md`](docs/cloudflare-setup.md) — Cloudflare Pages staging deploy: secrets, workflow, troubleshooting
+- [`docs/cloudflare-worker-api.md`](docs/cloudflare-worker-api.md) — read-only Cloudflare Worker API (`task-management-api`) over Supabase
 - [`docs/import-tasks.md`](docs/import-tasks.md) · [`docs/sync-tasks.md`](docs/sync-tasks.md) · [`docs/filtering.md`](docs/filtering.md) · [`docs/task-references.md`](docs/task-references.md) · [`docs/task-text-traceability.md`](docs/task-text-traceability.md)
 
 CI runs on every PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (build + checks; no deploy).

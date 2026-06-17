@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "import:tasks": "tsx scripts/import_excel_tasks.ts",
-    "sync:tasks": "tsx scripts/sync_csv_tasks.ts"
+    "sync:tasks": "tsx scripts/sync_csv_tasks.ts",
+    "d1:export": "node scripts/d1/export-worker-data.mjs",
+    "d1:generate-import": "node scripts/d1/generate-d1-import-sql.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

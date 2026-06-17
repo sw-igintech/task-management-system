@@ -1,0 +1,17 @@
+{
+  "name": "task-management-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Cloudflare Worker API (read-only) in front of Supabase — migration skeleton.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250906.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.114.0"
+  }
+}

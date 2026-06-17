@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Task, Person, TaskFilters, SortField, SortDirection } from '../types';
 import { isMockMode, supabase } from '../lib/supabase';
+import { USE_WORKER_API, taskApi } from '../lib/taskApi';
 import * as storage from '../lib/storage';
+
+// Backend the data layer is talking to (for the UI indicator).
+export type Backend = 'worker' | 'mock' | 'supabase';
+export const ACTIVE_BACKEND: Backend = USE_WORKER_API ? 'worker' : isMockMode ? 'mock' : 'supabase';
 
 const DEFAULT_FILTERS: TaskFilters = {
   search: '',
@@ -52,6 +57,24 @@ export function useTasks() {
     setLoading(true);
     setError(null);
 
+    // Worker API mode (enabled by VITE_USE_WORKER_API=true). No silent Supabase
+    // fallback — if the Worker fails we surface the error.
+    if (USE_WORKER_API) {
+      try {
+        const [loadedPeople, rawTasks] = await Promise.all([taskApi.getPeople(), taskApi.getTasks()]);
+        const peopleMap = new Map(loadedPeople.map(p => [p.id, p]));
+        setPeople(loadedPeople);
+        setTasks(rawTasks.map(t => joinPerson(t, peopleMap)));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[WorkerAPI] Load error:', msg);
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (isMockMode) {
       setTasks(storage.getTasks());
       setPeople(storage.getPeople());
@@ -93,6 +116,20 @@ export function useTasks() {
   const addTask = useCallback(async (
     taskData: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'archived'>,
   ): Promise<Task | null> => {
+    if (USE_WORKER_API) {
+      try {
+        const created = await taskApi.createTask({ ...toDbPayload(taskData), archived: false });
+        const newTask = joinPerson(created, new Map(people.map(p => [p.id, p])));
+        setTasks(prev => [...prev, newTask]);
+        return newTask;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[WorkerAPI] addTask error:', msg);
+        setError(msg);
+        return null;
+      }
+    }
+
     if (isMockMode) {
       const newTask = storage.addTask(taskData);
       setTasks(prev => [...prev, newTask]);
@@ -121,6 +158,20 @@ export function useTasks() {
     id: string,
     updates: Partial<Task>,
   ): Promise<Task | null> => {
+    if (USE_WORKER_API) {
+      try {
+        const updatedRow = await taskApi.updateTask(id, toDbPayload(updates));
+        const updatedTask = joinPerson(updatedRow, new Map(people.map(p => [p.id, p])));
+        setTasks(prev => prev.map(t => (t.id === id ? updatedTask : t)));
+        return updatedTask;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[WorkerAPI] updateTask error:', msg);
+        setError(msg);
+        return null;
+      }
+    }
+
     if (isMockMode) {
       const updated = storage.updateTask(id, updates);
       if (updated) setTasks(prev => prev.map(t => t.id === id ? updated : t));
@@ -158,6 +209,19 @@ export function useTasks() {
     name: string,
     email?: string,
   ): Promise<Person | null> => {
+    if (USE_WORKER_API) {
+      try {
+        const person = await taskApi.createPerson(name, email);
+        setPeople(prev => [...prev, person]);
+        return person;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[WorkerAPI] addPerson error:', msg);
+        setError(msg);
+        return null;
+      }
+    }
+
     if (isMockMode) {
       const person = storage.addPerson(name, email);
       setPeople(prev => [...prev, person]);
@@ -207,6 +271,7 @@ export function useTasks() {
     loading,
     error,
     isMockMode,
+    backend: ACTIVE_BACKEND,
     addTask,
     updateTask,
     archiveTask,

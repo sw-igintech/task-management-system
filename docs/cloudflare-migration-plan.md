@@ -36,9 +36,15 @@ Production URL: https://task-management-system-gray-beta.vercel.app
 - **Cloudflare D1** — the SQL database behind the Workers API.
 - **Resend / SendGrid** — sends transactional email (notifications) from the Worker.
 
+## Migration branch (updated)
+
+The migration uses **one long-running branch: `cloudflare/full-migration`** (not a branch
+per step). Work accumulates there and is deployed to Cloudflare **staging** via GitHub
+Actions. `main` stays on the Vercel + Supabase production path until a verified cutover.
+
 ## 4. Safe migration phases
 
-Each phase is its own PR (or small set of PRs). Do not combine phases.
+Each phase is committed to `cloudflare/full-migration`. Do not combine DB and hosting moves.
 
 0. **Baseline / tag / backup** — capture a known-good state. Annotated tag
    `v0.1.0-supabase-vercel-stable` marks the last Vercel+Supabase commit. Back up the
@@ -50,15 +56,58 @@ Each phase is its own PR (or small set of PRs). Do not combine phases.
    ✅ *done in this phase (`.github/workflows/ci.yml`).*
 3. **Cloudflare staging deploy** — add a Cloudflare Pages project that builds the SAME
    frontend to a **staging** URL. Production stays on Vercel. Compare behavior.
+   ✅ *done: `.github/workflows/deploy-cloudflare-pages.yml` deploys `dist/` to the Cloudflare
+   Pages project `task-management-system` (preview/staging) on push to
+   `cloudflare/full-migration`. Staging URL `https://staging.task-management-system-3nm.pages.dev`
+   verified live and connected to Supabase. GitHub Actions owns the deploy. See
+   `docs/cloudflare-setup.md`.*
 4. **Worker API abstraction** — introduce a Cloudflare Worker that exposes the API the
    frontend needs. Frontend talks to an abstraction layer so the backend can be swapped.
    Worker initially proxies / mirrors Supabase. No data move yet.
+   ✅ *done: Worker `task-management-api` (`worker/`, deployed via
+   `.github/workflows/deploy-cloudflare-worker.yml`) now exposes the full read + write CRUD
+   the frontend uses — `/health`, GET/POST `/api/people`, GET/POST `/api/tasks`,
+   PATCH `/api/tasks/:id`, POST `/api/tasks/:id/archive`, POST `/api/tasks/:id/restore` —
+   over Supabase via the server-side service-role key. Verified incl. a non-destructive write
+   smoke test. **No auth yet (staging/internal only); D1 and email remain future.**
+   See `docs/cloudflare-worker-api.md`.*
+   ✅ *frontend integration done (behind a flag): the data layer (`src/lib/taskApi.ts` +
+   `useTasks`) uses the Worker API when `VITE_USE_WORKER_API=true` and `VITE_WORKER_API_URL`
+   is set; otherwise it stays on direct Supabase (or mock). Staging Pages is configured (via
+   GitHub Variables) to run in Worker mode. Direct Supabase remains the default fallback and
+   is not removed.*
+   ➡️ **Next:** prepare the Cloudflare D1 schema + export/import migration plan (no cutover).
 5. **D1 staging migration** — create the D1 schema, migrate a COPY of the data into D1,
    point the Worker at D1 **in staging only**. Verify parity against Supabase.
+   ✅ *done: D1 staging DB `task-management-staging` populated (schema `d1/schema.sql`, data
+   copied via `.github/workflows/d1-staging-import.yml`); verified 5 people / 142 tasks /
+   140 active / 2 archived / 0 null / 0 dup task_number.*
+   ✅ *Worker switched to D1: on this branch the deployed Worker reads/writes
+   **D1 staging directly** (binding `DB`; `/health` → `db: "d1"`). **No `DATA_BACKEND` flag,
+   no Supabase at runtime.** The frontend is unchanged → staging path is now
+   `Cloudflare Pages → Worker → D1 staging`. Supabase stays as source/rollback reference.
+   See `docs/cloudflare-worker-api.md` + `docs/d1-migration.md`.*
+   ➡️ **Next:** full browser-level validation of staging on D1, then decide auth/access
+   control before any production cutover. Email and production cutover remain future.
+   ✅ *production candidate prepared (no cutover): D1 `task-management-production` (clean copy
+   from Supabase, smoke-test tasks excluded), Worker `task-management-api-production` bound to
+   it (`wrangler.toml [env.production]`), and a Cloudflare Pages **production-candidate** branch
+   deployment pointing at the production Worker. All via manual `workflow_dispatch` workflows
+   (`d1-production-import`, `deploy-cloudflare-worker-production`,
+   `deploy-cloudflare-pages-production-preview`). **No DNS/custom-domain change, no merge to
+   main, Vercel + Supabase untouched.** See `docs/production-cutover-checklist.md`.*
+   ⚠️ *Auth/access control intentionally deferred (user-accepted risk) — must be addressed
+   before broad production exposure.*
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.
    Keys live in Cloudflare/GitHub secrets, never in code.
 7. **Production cutover** — switch the production domain to Cloudflare Pages + Workers + D1
    only after staging is fully verified. Keep Vercel + Supabase running in parallel.
+   ✅ *Cutover performed (`.pages.dev`, no custom domain): merged `cloudflare/full-migration` →
+   `main` (after tagging `v0.1.0-vercel-supabase-before-cloudflare-cutover` on the pre-cutover
+   main), refreshed D1 production from Supabase, deployed the official Cloudflare production
+   frontend `https://task-management-system-3nm.pages.dev` → production Worker → D1 production.
+   **Vercel + Supabase remain live, untouched, as rollback (≥ 1–2 weeks). No DNS/custom-domain
+   change. No auth/email added.** See `docs/production-cutover-checklist.md`.*
 8. **Rollback ready** — if anything regresses, repoint DNS/config back to Vercel + Supabase.
    Decommission the old stack only after a stable bake-in period.
 
