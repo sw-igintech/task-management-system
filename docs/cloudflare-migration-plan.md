@@ -79,6 +79,13 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    ➡️ **Next:** prepare the Cloudflare D1 schema + export/import migration plan (no cutover).
 5. **D1 staging migration** — create the D1 schema, migrate a COPY of the data into D1,
    point the Worker at D1 **in staging only**. Verify parity against Supabase.
+   🔄 *in progress: D1 staging DB `task-management-staging` with schema `d1/schema.sql`, data
+   copied from the Worker API via `.github/workflows/d1-staging-import.yml`
+   (`scripts/d1/export-worker-data.mjs` + `generate-d1-import-sql.mjs`). The Worker now also
+   supports `GET /api/tasks?include_archived` for full export. **Worker/app still use Supabase
+   — not pointed at D1 yet.** See `docs/d1-migration.md`.*
+   ➡️ **Next:** add a Worker D1 backend adapter behind a Worker-side flag/binding and test it
+   against D1 staging (no production cutover).
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.
    Keys live in Cloudflare/GitHub secrets, never in code.
 7. **Production cutover** — switch the production domain to Cloudflare Pages + Workers + D1

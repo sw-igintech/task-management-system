@@ -97,6 +97,23 @@ controlled by two **GitHub Variables** (non-secret; passed into the Pages build)
 - The header shows a **"Backend: Worker API"** badge in Worker mode (distinct from the amber
   "Mock Mode" badge). No service key is ever in the frontend.
 
+## 3d. Cloudflare D1 (staging copy)
+
+A D1 staging database holds a **copy** of the data for the next migration phase. Supabase
+remains the source of truth; nothing reads/writes D1 at runtime yet.
+
+- **D1 staging DB:** `task-management-staging`
+- **D1 production DB (planned name only — do NOT create yet):** `task-management-production`
+- **Schema:** `d1/schema.sql` (SQLite mirror of the Supabase tables)
+- **Scripts:** `scripts/d1/export-worker-data.mjs` (export via Worker API),
+  `scripts/d1/generate-d1-import-sql.mjs` (build the staging import SQL)
+- **Workflow:** `.github/workflows/d1-staging-import.yml` (create/reuse DB → apply schema →
+  export → generate → import → verify). Trigger: `workflow_dispatch` or push touching
+  `d1/**` / `scripts/d1/**`. Secrets used: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+  (no Supabase secrets — export goes through the Worker API).
+- **Generated data path (gitignored, never committed):** `exports/d1/`
+- Full details + verification SQL: `docs/d1-migration.md`.
+
 ## 4. Intentionally NOT included yet
 
 - Cloudflare **Workers** API

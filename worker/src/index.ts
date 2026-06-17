@@ -164,8 +164,16 @@ function buildTaskPayload(body: Record<string, unknown>, requireTitle: boolean):
 }
 
 // ── Route handlers ──────────────────────────────────────────────────────────
-async function listTable(env: Env, table: string, order: string, origin: string | null): Promise<Response> {
-  const res = await sb(env, 'GET', `${table}?select=*&order=${order}`);
+// `filter` is an optional extra PostgREST clause (e.g. "archived=eq.false").
+async function listTable(
+  env: Env,
+  table: string,
+  order: string,
+  origin: string | null,
+  filter?: string,
+): Promise<Response> {
+  const query = `${table}?select=*${filter ? `&${filter}` : ''}&order=${order}`;
+  const res = await sb(env, 'GET', query);
   if (!res.ok) return upstreamError(res, origin);
   return jsonResponse(await res.json(), 200, origin);
 }
@@ -209,7 +217,7 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
-    const { pathname } = new URL(request.url);
+    const { pathname, searchParams } = new URL(request.url);
     const method = request.method;
 
     if (method === 'OPTIONS') return handleCors(origin);
@@ -242,7 +250,14 @@ export default {
       // /api/tasks
       if (parts[1] === 'tasks') {
         if (parts.length === 2) {
-          if (method === 'GET') return await listTable(env, 'tasks', 'priority.asc', origin);
+          if (method === 'GET') {
+            // Default (and ?include_archived=true|1) returns ALL tasks — unchanged from
+            // today (the Worker never filtered archived; the frontend filters client-side).
+            // ?include_archived=false|0 narrows to active tasks only.
+            const ia = searchParams.get('include_archived');
+            const filter = ia === 'false' || ia === '0' ? 'archived=eq.false' : undefined;
+            return await listTable(env, 'tasks', 'priority.asc', origin, filter);
+          }
           if (method === 'POST') return await createTask(env, await parseJsonBody(request), origin);
           return errorResponse('Method Not Allowed', 405, origin);
         }

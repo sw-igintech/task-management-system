@@ -1,0 +1,79 @@
+name: D1 Staging Import
+
+# Creates/reuses the Cloudflare D1 STAGING database, applies the schema, exports the
+# current data via the Worker API (which reads Supabase), and imports a COPY into D1.
+# This NEVER touches Supabase or production, and does NOT switch the Worker/app to D1.
+# GitHub Actions owns this — not Cloudflare Git integration.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [cloudflare/full-migration] # never main
+    paths:
+      - 'd1/**'
+      - 'scripts/d1/**'
+      - '.github/workflows/d1-staging-import.yml'
+
+permissions:
+  contents: read
+
+env:
+  D1_NAME: task-management-staging
+  WORKER_API_URL: https://task-management-api.sw-590.workers.dev
+
+jobs:
+  d1-import:
+    name: Build & import D1 staging copy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create D1 staging DB (no-op if it already exists)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 create "$D1_NAME" || echo "D1 '$D1_NAME' already exists — continuing."
+
+      - name: Show D1 database info (id is not a secret)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 info "$D1_NAME" || true
+
+      - name: Apply schema to D1 staging (remote)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --file=d1/schema.sql
+
+      - name: Export data via Worker API (no secrets needed)
+        run: node scripts/d1/export-worker-data.mjs
+
+      - name: Generate D1 import SQL
+        run: node scripts/d1/generate-d1-import-sql.mjs
+
+      - name: Import data copy into D1 staging (remote, staging-only replace)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --file=exports/d1/import-staging.sql
+
+      - name: Verify D1 staging counts & constraints
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          run_sql() { echo "## $1"; npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --command="$2"; }
+          run_sql "people count (expect 5)" "SELECT COUNT(*) AS people FROM people;"
+          run_sql "tasks total (expect ~142)" "SELECT COUNT(*) AS tasks_total FROM tasks;"
+          run_sql "active tasks (expect ~140)" "SELECT COUNT(*) AS active FROM tasks WHERE archived = 0;"
+          run_sql "archived tasks (expect ~2)" "SELECT COUNT(*) AS archived FROM tasks WHERE archived = 1;"
+          run_sql "null task_number (expect 0)" "SELECT COUNT(*) AS null_task_number FROM tasks WHERE task_number IS NULL;"
+          run_sql "duplicate task_number (expect 0)" "SELECT COUNT(*) AS dup_task_number FROM (SELECT task_number FROM tasks WHERE task_number IS NOT NULL GROUP BY task_number HAVING COUNT(*) > 1);"
+          run_sql "archived smoke tasks 141/142" "SELECT task_number, archived, closed_date, opened_by_person_id, responsible_person_id FROM tasks WHERE task_number IN (141,142) ORDER BY task_number;"

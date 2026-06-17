@@ -18,6 +18,11 @@ backups/
 # Sync/dry-run reports produced by scripts/sync_csv_tasks.ts — never commit
 reports/
 
+# Generated D1 export/import data — never commit (regenerate via scripts/d1/*)
+exports/
+*.sqlite
+*.sqlite3
+
 # Private task source exports / data files (internal engineering data) — kept out of
 # version control. These are import sources; the data lives in the database after import.
 # Broad rules for future safety (no such files are tracked today).
