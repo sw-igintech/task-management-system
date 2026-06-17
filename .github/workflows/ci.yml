@@ -1,0 +1,69 @@
+name: CI
+
+# Continuous-integration checks only. This workflow NEVER deploys and uses NO
+# secrets (Cloudflare / Vercel / Supabase). It exists to gate pull requests
+# before they reach main/develop. See docs/git-workflow.md.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop, main] # checks only on push — no deploy step exists here
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Required gate. `npm run build` is `tsc -b && vite build`, so this ALSO
+      # type-checks the project. The build does not require any VITE_SUPABASE_*
+      # env vars (verified: it builds cleanly with no .env), so none are set here.
+      - name: Build (also type-checks via tsc -b)
+        run: npm run build
+
+      # Lint runs but is non-blocking: there are pre-existing eslint issues
+      # (tracked separately, see docs/git-workflow.md) that are unrelated to CI.
+      # Remove `continue-on-error` once those are resolved to make lint a hard gate.
+      - name: Lint (non-blocking)
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "No 'lint' script in package.json — skipped."
+          fi
+
+      # No dedicated 'typecheck' script exists; tsc -b in the build step covers it.
+      # This step runs one only if it is added later, and never fails on absence.
+      - name: Typecheck (only if a dedicated script exists)
+        run: |
+          if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.typecheck ? 0 : 1)"; then
+            npm run typecheck
+          else
+            echo "No 'typecheck' script — type checking is covered by 'npm run build' (tsc -b)."
+          fi
+
+      # No test script exists yet; run one only if a meaningful one is added later.
+      - name: Test (only if a script exists)
+        run: |
+          if node -e "process.exit(require('./package.json').scripts && require('./package.json').scripts.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "No 'test' script — skipped."
+          fi
