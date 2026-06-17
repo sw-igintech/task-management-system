@@ -65,6 +65,11 @@ Set as **Worker secrets** (the deploy workflow sets them from GitHub Secrets via
 It must never appear in frontend code, build output, logs, docs, or any client response.
 The Worker never returns it; it is used only in upstream request headers.
 
+> **Redeploy note:** `SUPABASE_SERVICE_ROLE_KEY` is required as a GitHub Actions secret so
+> the Worker can read Supabase data. After adding it, re-run the deploy workflow (via
+> `workflow_dispatch`, or a push touching `worker/**`) so the deploy step binds it as a
+> Worker secret; until then `/api/people` and `/api/tasks` return `503`.
+
 ## Deployment
 
 - Workflow: `.github/workflows/deploy-cloudflare-worker.yml` (name **Deploy Cloudflare Worker**)
