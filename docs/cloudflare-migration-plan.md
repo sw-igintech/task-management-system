@@ -69,10 +69,14 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    the frontend uses — `/health`, GET/POST `/api/people`, GET/POST `/api/tasks`,
    PATCH `/api/tasks/:id`, POST `/api/tasks/:id/archive`, POST `/api/tasks/:id/restore` —
    over Supabase via the server-side service-role key. Verified incl. a non-destructive write
-   smoke test. **Frontend is NOT switched yet; no auth yet (staging/internal only); D1 and
-   email remain future.** See `docs/cloudflare-worker-api.md`.*
-   ➡️ **Next:** switch the frontend data layer to optionally use the Worker API behind an env
-   flag, keeping direct Supabase as the default fallback.
+   smoke test. **No auth yet (staging/internal only); D1 and email remain future.**
+   See `docs/cloudflare-worker-api.md`.*
+   ✅ *frontend integration done (behind a flag): the data layer (`src/lib/taskApi.ts` +
+   `useTasks`) uses the Worker API when `VITE_USE_WORKER_API=true` and `VITE_WORKER_API_URL`
+   is set; otherwise it stays on direct Supabase (or mock). Staging Pages is configured (via
+   GitHub Variables) to run in Worker mode. Direct Supabase remains the default fallback and
+   is not removed.*
+   ➡️ **Next:** prepare the Cloudflare D1 schema + export/import migration plan (no cutover).
 5. **D1 staging migration** — create the D1 schema, migrate a COPY of the data into D1,
    point the Worker at D1 **in staging only**. Verify parity against Supabase.
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.

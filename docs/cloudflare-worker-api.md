@@ -175,6 +175,22 @@ curl -s -X PATCH $BASE/api/tasks/$ID -H 'Content-Type: application/json' -d '{"n
 curl -s -X POST  $BASE/api/tasks/$ID/archive >/dev/null
 ```
 
+## Frontend integration (behind a flag)
+
+The frontend can now use this Worker API instead of direct Supabase, gated by env flags:
+
+- `src/lib/taskApi.ts` — typed client (`getPeople`, `getTasks`, `createTask`, `updateTask`,
+  `createPerson`); `USE_WORKER_API` = `VITE_USE_WORKER_API === 'true' && VITE_WORKER_API_URL set`.
+- `src/hooks/useTasks.ts` — branches each op: **Worker mode** → `taskApi.*`; else **mock** →
+  localStorage; else **Supabase** → direct client. Archive/restore go through `updateTask`
+  (`{ archived }` → PATCH). Person joins (`responsible_person`/`opened_by_person`) are still
+  computed client-side, so Worker responses match the existing `Task`/`Person` shapes.
+- **No silent backend switching:** in Worker mode a Worker failure surfaces an error (it does
+  not fall back to Supabase). Direct Supabase is the fallback only when the flag is off.
+- Enable on Cloudflare Pages staging via GitHub Variables `VITE_USE_WORKER_API=true` and
+  `VITE_WORKER_API_URL=https://task-management-api.sw-590.workers.dev` (see
+  `docs/cloudflare-setup.md`). The header shows a "Backend: Worker API" badge when active.
+
 ## Future steps (not in this prompt)
 
 1. Switch the frontend data layer to call this Worker API behind an env flag (Supabase direct

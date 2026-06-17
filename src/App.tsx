@@ -62,13 +62,18 @@ function AppInner() {
             </button>
           </nav>
 
-          {/* Mock mode indicator */}
-          {hookData.isMockMode && (
+          {/* Backend indicator — Worker API takes precedence over the Mock badge */}
+          {hookData.backend === 'worker' ? (
+            <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1">
+              <Database size={12} />
+              Backend: Worker API
+            </div>
+          ) : hookData.backend === 'mock' ? (
             <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
               <Database size={12} />
               Mock Mode (localStorage)
             </div>
-          )}
+          ) : null}
         </div>
       </header>
 

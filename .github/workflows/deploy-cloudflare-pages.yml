@@ -30,15 +30,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Vite inlines VITE_* at build time. These come from GitHub Secrets so the
-      # staging site connects to the SAME Supabase as production (the anon key is a
-      # public client key by design). If the secrets are absent the build still
-      # succeeds but the app falls back to localStorage "mock mode" (no Supabase).
+      # Vite inlines VITE_* at build time. Supabase values come from GitHub Secrets so
+      # the staging site connects to the SAME Supabase as production (the anon key is a
+      # public client key by design). The Worker-mode flags come from GitHub Variables
+      # (non-secret): when VITE_USE_WORKER_API=true and VITE_WORKER_API_URL is set, the
+      # frontend uses the Worker API; otherwise it falls back to direct Supabase. If any
+      # are absent the build still succeeds (direct Supabase, or mock if Supabase absent).
       # Never hardcode these values.
       - name: Build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_USE_WORKER_API: ${{ vars.VITE_USE_WORKER_API }}
+          VITE_WORKER_API_URL: ${{ vars.VITE_WORKER_API_URL }}
         run: npm run build
 
       # Create the Pages project on first run (no-op if it already exists). Keeps

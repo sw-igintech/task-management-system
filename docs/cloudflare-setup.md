@@ -78,6 +78,25 @@ A separate read-only Worker now sits in front of Supabase (frontend not switched
   endpoints to production before adding access control.
 - Full details: `docs/cloudflare-worker-api.md`.
 
+## 3c. Frontend Worker-API mode (feature flag)
+
+The frontend can optionally read/write through the Worker API instead of Supabase directly,
+controlled by two **GitHub Variables** (non-secret; passed into the Pages build):
+
+| Variable | Staging value | Meaning |
+|---|---|---|
+| `VITE_USE_WORKER_API` | `true` | Enable Worker mode (must be exactly `"true"`) |
+| `VITE_WORKER_API_URL` | `https://task-management-api.sw-590.workers.dev` | Worker base URL |
+
+- **Worker mode is active only when `VITE_USE_WORKER_API=true` AND `VITE_WORKER_API_URL` is set.**
+- **Direct Supabase remains the default/fallback** when the flag is absent/false (and mock
+  mode when Supabase env is also absent). The Supabase client code is unchanged and retained.
+- These flags are read at **build time** (Vite inlines `VITE_*`). The Pages workflow passes
+  them via `${{ vars.* }}`; set/change them in repo **Settings → Secrets and variables →
+  Actions → Variables**. (Locally: put them in `.env`.)
+- The header shows a **"Backend: Worker API"** badge in Worker mode (distinct from the amber
+  "Mock Mode" badge). No service key is ever in the frontend.
+
 ## 4. Intentionally NOT included yet
 
 - Cloudflare **Workers** API
