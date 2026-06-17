@@ -9,11 +9,6 @@ name: D1 Production Import
 
 on:
   workflow_dispatch:
-  # TEMPORARY (this session only): self-scoped push trigger to register + run this
-  # dispatch workflow once on the branch. Restored to workflow_dispatch-only afterward.
-  push:
-    branches: [cloudflare/full-migration]
-    paths: ['.github/workflows/d1-production-import.yml']
 
 permissions:
   contents: read
