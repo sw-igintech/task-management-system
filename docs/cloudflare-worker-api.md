@@ -1,31 +1,32 @@
 # Cloudflare Worker API (`task-management-api`)
 
-> Read-only Worker API that sits in front of Supabase. **Migration skeleton only.**
-> The frontend still uses Supabase directly and has **not** been switched to this API.
-> Production (Vercel + Supabase) is untouched. No D1, no email, no writes yet.
+> CRUD Worker API at `https://task-management-api.sw-590.workers.dev`. On the
+> `cloudflare/full-migration` branch it is backed **directly by Cloudflare D1 staging**
+> (`task-management-staging`) — **no Supabase at runtime, no `DATA_BACKEND` flag**. Staging
+> only; Vercel + Supabase production are untouched (Supabase remains the source/rollback
+> reference). No email. **Write endpoints have no auth yet (staging/internal only).**
 
 ## Purpose
 
-A server-side API boundary so the data layer can later be swapped (Supabase → D1)
-without changing the frontend's call sites. This step only stands up the Worker and
-verifies it can read from Supabase in staging.
+A server-side API boundary between the frontend and the database. The frontend (staging)
+calls this Worker; the Worker now reads/writes D1. Swapping Supabase → D1 happened here
+without changing the frontend's call sites.
 
-## Current intermediate architecture
+## Architecture (this branch / staging)
 
 ```
-Browser ──▶ Cloudflare Pages (frontend)  ──▶ Supabase   (current data path, unchanged)
-                                          ┌▶ Supabase   (NEW, parallel, staging tests only)
-Cloudflare Worker  ───────────────────────┘
-  task-management-api
+Browser ──▶ Cloudflare Pages (staging) ──▶ Cloudflare Worker (task-management-api) ──▶ Cloudflare D1 (task-management-staging)
 ```
 
-The frontend does **not** call the Worker yet. Future API base URL (once switched):
-`https://task-management-api.<account-subdomain>.workers.dev`.
+Supabase is no longer in the runtime path for this Worker. API base URL:
+`https://task-management-api.sw-590.workers.dev`.
 
 ## Project layout
 
-- `worker/src/index.ts` — Worker entry (fetch handler + CORS + Supabase REST reads)
-- `worker/wrangler.toml` — `name = "task-management-api"`, `main = "src/index.ts"`, current `compatibility_date`; no D1, no routes
+- `worker/src/index.ts` — Worker entry (fetch handler + CORS + **D1** queries)
+- `worker/wrangler.toml` — `name`, `main`, `compatibility_date`, and the **D1 binding**
+  `DB` → `task-management-staging` (`database_id e262c9ce-8d5f-46d0-86c7-24030b9e760d`). No
+  production D1 binding, no routes, no custom domain.
 - `worker/package.json`, `worker/tsconfig.json` — Worker-only toolchain (wrangler, typescript, workers-types)
 
 ## Endpoints
@@ -43,12 +44,13 @@ The frontend does **not** call the Worker yet. Future API base URL (once switche
 
 **No `DELETE`** — the app uses soft archive only; hard delete is intentionally not exposed.
 
-Response shapes are the raw Supabase (PostgREST) rows — same snake_case columns the frontend
-already reads (`id`, `task_number`, `title`, `description`, `notes`, `status`, `priority`,
+Response shapes are the D1 rows — the same snake_case columns the frontend already reads
+(`id`, `task_number`, `title`, `description`, `notes`, `status`, `priority`,
 `responsible_person_id`, `opened_by_person_id`, `due_date`, `closed_date`, `archived`,
-`created_at`, `updated_at`, `source_raw_text`, `import_hash`, …). The client-side person joins
-(`responsible_person`, `opened_by_person`) are computed in the frontend and are **not** added
-by the Worker (it mirrors the frontend's `select('*')` query exactly).
+`created_at`, `updated_at`, `source_raw_text`, `import_hash`, …) — identical to the previous
+Supabase responses. **`archived` is stored in D1 as INTEGER 0/1 but returned as a boolean.**
+The client-side person joins (`responsible_person`, `opened_by_person`) are computed in the
+frontend and are **not** added by the Worker.
 
 ### Request/response examples
 
@@ -106,31 +108,21 @@ Methods: `GET, POST, PATCH, OPTIONS`. Headers: `Content-Type`. No credentials. P
 
 ## Security limitation (important)
 
-There is **no app-level authentication yet**, and the Worker uses the Supabase **service
-role** key (bypasses RLS). Therefore this Worker is a **staging / internal migration API
-only** — it must **not** be treated as a public production API. Before any production cutover
-that exposes the write endpoints broadly, auth/permissions (or another access control) must be
-added. Until then it is reachable only as a parallel staging surface; the frontend is not
-switched to it.
+There is **no app-level authentication yet**. The Worker holds full read/write access to the
+D1 staging database. Therefore this Worker is a **staging / internal migration API only** — it
+must **not** be treated as a public production API. Before any production cutover that exposes
+the write endpoints broadly, auth/permissions (or another access control) must be added, or an
+explicit risk decision documented.
 
-## Required secrets (server-side only)
+## Runtime config (no secrets)
 
-Set as **Worker secrets** (the deploy workflow sets them from GitHub Secrets via
-`wrangler secret put` over stdin — never committed, never echoed):
+The Worker talks to D1 via the **`DB` binding** in `worker/wrangler.toml` — there are **no
+runtime secrets** (no `SUPABASE_URL`, no `SUPABASE_SERVICE_ROLE_KEY`). Deployment uses only
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (GitHub Secrets).
 
-| Worker secret | Source |
-|---|---|
-| `SUPABASE_URL` | same value as `VITE_SUPABASE_URL` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase **service role** key |
-
-⚠️ **Security:** `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS and is **server-side only**.
-It must never appear in frontend code, build output, logs, docs, or any client response.
-The Worker never returns it; it is used only in upstream request headers.
-
-> **Redeploy note:** `SUPABASE_SERVICE_ROLE_KEY` is required as a GitHub Actions secret so
-> the Worker can read Supabase data. After adding it, re-run the deploy workflow (via
-> `workflow_dispatch`, or a push touching `worker/**`) so the deploy step binds it as a
-> Worker secret; until then `/api/people` and `/api/tasks` return `503`.
+> The `VITE_SUPABASE_*` and `SUPABASE_SERVICE_ROLE_KEY` GitHub secrets still exist but are
+> **no longer used by this Worker**. Any Worker secrets set previously are ignored by the new
+> D1 code. `/api/*` no longer returns `503` for missing Supabase config.
 
 ## Deployment
 
@@ -138,15 +130,8 @@ The Worker never returns it; it is used only in upstream request headers.
 - Triggers: push to `cloudflare/full-migration` touching `worker/**` (or the workflow), and
   manual `workflow_dispatch`. Never triggers on `main`.
 - Steps: checkout → Node 20 → `npm ci` (in `worker/`) → `npm run typecheck` →
-  `wrangler deploy` → set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` Worker secrets.
-- If `SUPABASE_SERVICE_ROLE_KEY` (GitHub secret) is absent, that step is **skipped** (not
-  failed); `/health` works but `/api/*` returns `503` until the secret is added.
-
-### Manual alternative (Cloudflare dashboard)
-
-If you prefer not to store the key in GitHub: deploy the Worker, then in the Cloudflare
-dashboard → Workers & Pages → `task-management-api` → Settings → Variables and Secrets,
-add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as **encrypted secrets**.
+  `wrangler deploy`. No Supabase secret-upload steps (the D1 binding is declared in
+  `wrangler.toml`).
 
 ## How to test
 

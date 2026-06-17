@@ -2,10 +2,16 @@ name = "task-management-api"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
 
-# Read-only Supabase proxy skeleton. No D1 bindings, no routes, no custom domain yet.
+# This Worker reads/writes Cloudflare D1 STAGING directly (no Supabase at runtime, no
+# DATA_BACKEND flag). Supabase remains the source/rollback reference but is NOT used by
+# the deployed Worker on this branch.
+[[d1_databases]]
+binding = "DB"
+database_name = "task-management-staging"
+database_id = "e262c9ce-8d5f-46d0-86c7-24030b9e760d"
+
+# No production D1 binding, no routes, no custom domain. task-management-production is
+# intentionally NOT created/bound yet.
 #
-# Runtime secrets are NOT stored here. Set them as Worker secrets (never committed):
-#   wrangler secret put SUPABASE_URL
-#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# (the deploy workflow sets them from GitHub Secrets). SUPABASE_SERVICE_ROLE_KEY is a
-# server-side secret and must never be exposed to the frontend.
+# SECURITY: write endpoints have NO app auth yet — staging/internal only. Add access
+# control before any production exposure.

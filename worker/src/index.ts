@@ -1,17 +1,15 @@
-// Cloudflare Worker API (CRUD) in front of Supabase.
+// Cloudflare Worker API (CRUD) backed directly by Cloudflare D1 (staging).
 //
-// Migration step: this Worker mirrors the task/person operations the frontend uses,
-// so the frontend can later be switched to it safely. The frontend is NOT switched
-// yet — it still talks to Supabase directly. No D1, no email.
+// On the cloudflare/full-migration branch this Worker reads/writes the D1 database
+// `task-management-staging` (binding `DB`). There is NO DATA_BACKEND flag and NO Supabase
+// at runtime — Supabase remains only as the source/rollback reference. Staging only.
 //
-// SECURITY: uses the Supabase SERVICE ROLE key (server-side secret, bypasses RLS).
-// It is read from a Worker secret binding — never committed, logged, or returned to
-// clients. There is NO app-level auth yet, so this is a STAGING/INTERNAL migration API
-// only; write endpoints must be protected before any public/production exposure.
+// SECURITY: write endpoints have NO app-level auth yet. This is acceptable for
+// staging/internal migration testing ONLY. Before any production exposure, auth/access
+// control must be added (or an explicit risk decision documented).
 
 export interface Env {
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  DB: D1Database;
 }
 
 // ── Constants (mirror the frontend's allowed values) ────────────────────────
@@ -65,47 +63,21 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
   return parsed as Record<string, unknown>;
 }
 
-// ── Supabase REST (PostgREST) wrapper ───────────────────────────────────────
-async function sb(
-  env: Env,
-  method: string,
-  pathAndQuery: string,
-  body?: unknown,
-  prefer?: string,
-): Promise<Response> {
-  const headers: Record<string, string> = {
-    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-    Accept: 'application/json',
-  };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (prefer) headers['Prefer'] = prefer;
-  return fetch(`${env.SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+// D1 stores `archived` as INTEGER 0/1; the API exposes it as a boolean.
+function mapTaskRow(row: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!row) return row;
+  return { ...row, archived: row.archived === 1 || row.archived === true };
 }
 
-// Reads the upstream body and returns a safe error response. PostgREST messages
-// don't contain secrets; we truncate and also log server-side for debugging.
-async function upstreamError(res: Response, origin: string | null): Promise<Response> {
-  const detail = (await res.text()).slice(0, 300);
-  console.error(`[supabase] ${res.status}: ${detail}`);
-  return jsonResponse({ error: 'Database request failed', status: res.status, detail }, 502, origin);
-}
-
-// ── Validation ──────────────────────────────────────────────────────────────
+// ── Validation (unchanged contract) ─────────────────────────────────────────
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Normalizes/validates a date field: '' → null; null → null; 'YYYY-MM-DD' ok.
 function normDate(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'string' && ISO_DATE.test(value)) return value;
   throw new Error(`${field} must be null or an ISO date (YYYY-MM-DD)`);
 }
 
-// Optional person id: '' → null; null → null; non-empty string ok.
 function normPersonId(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'string') return value;
@@ -136,7 +108,8 @@ function validatePriority(value: unknown): number {
   return n;
 }
 
-// Builds a validated DB payload for create (requireTitle) or patch.
+// Builds a validated payload for create (requireTitle) or patch. `archived` stays boolean
+// here; it is converted to 0/1 at the SQL layer.
 function buildTaskPayload(body: Record<string, unknown>, requireTitle: boolean): Record<string, unknown> {
   rejectUnknownFields(body, TASK_FIELDS);
   const out: Record<string, unknown> = {};
@@ -163,19 +136,16 @@ function buildTaskPayload(body: Record<string, unknown>, requireTitle: boolean):
   return out;
 }
 
-// ── Route handlers ──────────────────────────────────────────────────────────
-// `filter` is an optional extra PostgREST clause (e.g. "archived=eq.false").
-async function listTable(
-  env: Env,
-  table: string,
-  order: string,
-  origin: string | null,
-  filter?: string,
-): Promise<Response> {
-  const query = `${table}?select=*${filter ? `&${filter}` : ''}&order=${order}`;
-  const res = await sb(env, 'GET', query);
-  if (!res.ok) return upstreamError(res, origin);
-  return jsonResponse(await res.json(), 200, origin);
+// ── D1 route handlers ────────────────────────────────────────────────────────
+async function listPeople(env: Env, origin: string | null): Promise<Response> {
+  const { results } = await env.DB.prepare('SELECT * FROM people ORDER BY name ASC').all();
+  return jsonResponse(results, 200, origin);
+}
+
+async function listTasks(env: Env, activeOnly: boolean, origin: string | null): Promise<Response> {
+  const sql = `SELECT * FROM tasks${activeOnly ? ' WHERE archived = 0' : ''} ORDER BY priority ASC`;
+  const { results } = await env.DB.prepare(sql).all<Record<string, unknown>>();
+  return jsonResponse(results.map(mapTaskRow), 200, origin);
 }
 
 async function createPerson(env: Env, body: Record<string, unknown>, origin: string | null): Promise<Response> {
@@ -184,33 +154,77 @@ async function createPerson(env: Env, body: Record<string, unknown>, origin: str
   if (typeof name !== 'string' || name.trim() === '') {
     return errorResponse('name is required and must be a non-empty string', 400, origin);
   }
-  const payload: Record<string, unknown> = { name: name.trim() };
-  if ('email' in body) payload.email = body.email ?? null;
-
-  const res = await sb(env, 'POST', 'people', [payload], 'return=representation');
-  if (!res.ok) return upstreamError(res, origin);
-  const rows = (await res.json()) as unknown[];
-  return jsonResponse(rows[0] ?? null, 201, origin);
+  const email = 'email' in body ? (body.email ?? null) : null;
+  const row = await env.DB
+    .prepare('INSERT INTO people (id, name, email, created_at) VALUES (?, ?, ?, ?) RETURNING *')
+    .bind(crypto.randomUUID(), name.trim(), email, new Date().toISOString())
+    .first<Record<string, unknown>>();
+  return jsonResponse(row, 201, origin);
 }
 
 async function createTask(env: Env, body: Record<string, unknown>, origin: string | null): Promise<Response> {
-  const payload = buildTaskPayload(body, true);
-  if (!('archived' in payload)) payload.archived = false; // default; id/task_number/timestamps are DB-managed
-  const res = await sb(env, 'POST', 'tasks', [payload], 'return=representation');
-  if (!res.ok) return upstreamError(res, origin);
-  const rows = (await res.json()) as unknown[];
-  return jsonResponse(rows[0] ?? null, 201, origin);
+  const p = buildTaskPayload(body, true);
+  // Next task_number = max + 1. Racy under concurrency — fine for staging/internal use;
+  // production would need a sequence/atomic counter.
+  const maxRow = await env.DB.prepare('SELECT MAX(task_number) AS m FROM tasks').first<{ m: number | null }>();
+  const nextNumber = (maxRow?.m ?? 0) + 1;
+  const now = new Date().toISOString();
+  const archived = p.archived === true ? 1 : 0;
+
+  const row = await env.DB
+    .prepare(
+      `INSERT INTO tasks
+        (id, task_number, title, description, notes, status, priority,
+         responsible_person_id, opened_by_person_id, due_date, closed_date,
+         archived, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      nextNumber,
+      p.title,
+      p.description ?? null,
+      p.notes ?? null,
+      (p.status as string | undefined) ?? 'not_started',
+      (p.priority as number | undefined) ?? 3,
+      p.responsible_person_id ?? null,
+      p.opened_by_person_id ?? null,
+      p.due_date ?? null,
+      p.closed_date ?? null,
+      archived,
+      now,
+      now,
+    )
+    .first<Record<string, unknown>>();
+  return jsonResponse(mapTaskRow(row), 201, origin);
 }
 
 async function patchTask(env: Env, id: string, payload: Record<string, unknown>, origin: string | null): Promise<Response> {
   if (Object.keys(payload).length === 0) {
     return errorResponse('No editable fields supplied', 400, origin);
   }
-  const res = await sb(env, 'PATCH', `tasks?id=eq.${encodeURIComponent(id)}`, payload, 'return=representation');
-  if (!res.ok) return upstreamError(res, origin);
-  const rows = (await res.json()) as unknown[];
-  if (rows.length === 0) return errorResponse('Task not found', 404, origin);
-  return jsonResponse(rows[0], 200, origin);
+  // Column names come only from the validated TASK_FIELDS whitelist → safe to interpolate.
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === 'archived') {
+      sets.push('archived = ?');
+      binds.push(value === true ? 1 : 0);
+    } else {
+      sets.push(`${key} = ?`);
+      binds.push(value ?? null);
+    }
+  }
+  sets.push('updated_at = ?');
+  binds.push(new Date().toISOString());
+  binds.push(id);
+
+  const row = await env.DB
+    .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
+    .bind(...binds)
+    .first<Record<string, unknown>>();
+  if (!row) return errorResponse('Task not found', 404, origin);
+  return jsonResponse(mapTaskRow(row), 200, origin);
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
@@ -222,10 +236,9 @@ export default {
 
     if (method === 'OPTIONS') return handleCors(origin);
 
-    // Health needs no DB config.
     if (pathname === '/health' && method === 'GET') {
       return jsonResponse(
-        { ok: true, service: 'task-management-api', db: 'supabase', timestamp: new Date().toISOString() },
+        { ok: true, service: 'task-management-api', db: 'd1', timestamp: new Date().toISOString() },
         200,
         origin,
       );
@@ -234,15 +247,14 @@ export default {
     const parts = pathname.split('/').filter(Boolean); // e.g. ['api','tasks','<id>','archive']
     if (parts[0] !== 'api') return errorResponse('Not Found', 404, origin);
 
-    // All /api/* endpoints need server config.
-    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-      return errorResponse('Server not configured: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing', 503, origin);
+    if (!env.DB) {
+      return errorResponse('Server not configured: D1 binding "DB" missing', 503, origin);
     }
 
     try {
       // /api/people
       if (parts[1] === 'people' && parts.length === 2) {
-        if (method === 'GET') return await listTable(env, 'people', 'name.asc', origin);
+        if (method === 'GET') return await listPeople(env, origin);
         if (method === 'POST') return await createPerson(env, await parseJsonBody(request), origin);
         return errorResponse('Method Not Allowed', 405, origin);
       }
@@ -251,12 +263,11 @@ export default {
       if (parts[1] === 'tasks') {
         if (parts.length === 2) {
           if (method === 'GET') {
-            // Default (and ?include_archived=true|1) returns ALL tasks — unchanged from
-            // today (the Worker never filtered archived; the frontend filters client-side).
-            // ?include_archived=false|0 narrows to active tasks only.
+            // Default (and ?include_archived=true|1) returns ALL tasks (the frontend filters
+            // client-side). ?include_archived=false|0 narrows to active tasks only.
             const ia = searchParams.get('include_archived');
-            const filter = ia === 'false' || ia === '0' ? 'archived=eq.false' : undefined;
-            return await listTable(env, 'tasks', 'priority.asc', origin, filter);
+            const activeOnly = ia === 'false' || ia === '0';
+            return await listTasks(env, activeOnly, origin);
           }
           if (method === 'POST') return await createTask(env, await parseJsonBody(request), origin);
           return errorResponse('Method Not Allowed', 405, origin);
@@ -281,7 +292,6 @@ export default {
       return errorResponse('Not Found', 404, origin);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // Validation/JSON-parse errors are client errors (400); anything else is 500.
       const isClientError =
         message.startsWith('Unknown or disallowed field') ||
         message.includes('must be') ||

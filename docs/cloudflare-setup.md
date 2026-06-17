@@ -112,6 +112,17 @@ remains the source of truth; nothing reads/writes D1 at runtime yet.
   `d1/**` / `scripts/d1/**`. Secrets used: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
   (no Supabase secrets — export goes through the Worker API).
 - **Generated data path (gitignored, never committed):** `exports/d1/`
+- **Worker is now bound to D1** (`worker/wrangler.toml`):
+  ```toml
+  [[d1_databases]]
+  binding = "DB"
+  database_name = "task-management-staging"
+  database_id = "e262c9ce-8d5f-46d0-86c7-24030b9e760d"
+  ```
+  The Worker reads/writes D1 directly (no `DATA_BACKEND` flag). It **no longer needs**
+  `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at runtime — those GitHub secrets still exist
+  but are unused by the Worker, and the deploy workflow no longer uploads Worker secrets.
+  Deploy still uses only `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - Full details + verification SQL: `docs/d1-migration.md`.
 
 ## 4. Intentionally NOT included yet

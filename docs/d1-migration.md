@@ -11,8 +11,15 @@ backend adapter — can be developed and verified against real-shaped data witho
 
 ## 2. Source of truth
 
-**Supabase, unchanged.** D1 staging is a **read copy** produced from the live Worker API
-(`Worker → Supabase`). Nothing writes back to Supabase.
+**Supabase remains the source/rollback reference, unchanged.** D1 staging was seeded with a
+copy of the data exported from the (then Supabase-backed) Worker API.
+
+**Update (Worker now uses D1):** on `cloudflare/full-migration` the deployed Worker reads/writes
+**D1 staging directly** (binding `DB` → `task-management-staging`). There is no `DATA_BACKEND`
+flag and no Supabase at runtime. So the staging path is now:
+`Cloudflare Pages → Worker → D1 staging`. Writes via the Worker affect **D1 only**, never
+Supabase. `task-management-production` is still **not** created. Next: full browser-level
+validation, then auth/access-control decisions before any production cutover.
 
 ## 3. Databases
 
