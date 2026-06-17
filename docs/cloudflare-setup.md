@@ -25,6 +25,10 @@ secret/variable, never hardcode it.
 Add them in **GitHub → Settings → Secrets and variables → Actions → New repository secret**
 (Secrets or Variables both work; the workflow reads them via `secrets.*`).
 
+> **Note:** Supabase Vite secrets are required for staging builds: `VITE_SUPABASE_URL` and
+> `VITE_SUPABASE_ANON_KEY`. Once set, re-run the deploy workflow so the staging build picks
+> them up and connects to Supabase (instead of falling back to localStorage mock mode).
+
 ## 2. Cloudflare Pages project
 
 - **Project name:** `task-management-system`
