@@ -56,13 +56,18 @@ Each phase is committed to `cloudflare/full-migration`. Do not combine DB and ho
    ✅ *done in this phase (`.github/workflows/ci.yml`).*
 3. **Cloudflare staging deploy** — add a Cloudflare Pages project that builds the SAME
    frontend to a **staging** URL. Production stays on Vercel. Compare behavior.
-   🔄 *in progress: `.github/workflows/deploy-cloudflare-pages.yml` deploys `dist/` to the
-   Cloudflare Pages project `task-management-system` (preview/staging) on every push to
-   `cloudflare/full-migration`. GitHub Actions owns the deploy; the app still uses Supabase.
-   See `docs/cloudflare-setup.md`.*
+   ✅ *done: `.github/workflows/deploy-cloudflare-pages.yml` deploys `dist/` to the Cloudflare
+   Pages project `task-management-system` (preview/staging) on push to
+   `cloudflare/full-migration`. Staging URL `https://staging.task-management-system-3nm.pages.dev`
+   verified live and connected to Supabase. GitHub Actions owns the deploy. See
+   `docs/cloudflare-setup.md`.*
 4. **Worker API abstraction** — introduce a Cloudflare Worker that exposes the API the
    frontend needs. Frontend talks to an abstraction layer so the backend can be swapped.
    Worker initially proxies / mirrors Supabase. No data move yet.
+   🔄 *in progress: read-only Worker `task-management-api` (`worker/`, deployed via
+   `.github/workflows/deploy-cloudflare-worker.yml`) with `/health`, `/api/people`,
+   `/api/tasks` reading Supabase via the server-side service-role key. The frontend is NOT
+   switched to it yet; D1 remains future. See `docs/cloudflare-worker-api.md`.*
 5. **D1 staging migration** — create the D1 schema, migrate a COPY of the data into D1,
    point the Worker at D1 **in staging only**. Verify parity against Supabase.
 6. **Email notifications** — wire Resend/SendGrid into the Worker for transactional email.

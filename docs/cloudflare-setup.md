@@ -47,6 +47,20 @@ Add them in **GitHub → Settings → Secrets and variables → Actions → New 
 - **GitHub Actions is the deploy owner.** Do **not** enable Cloudflare's Git integration —
   that would create a second, conflicting deploy pipeline.
 
+## 3b. Cloudflare Worker API (staging skeleton)
+
+A separate read-only Worker now sits in front of Supabase (frontend not switched yet).
+
+- **Worker name:** `task-management-api` (project in `worker/`)
+- **Workflow:** `.github/workflows/deploy-cloudflare-worker.yml` (triggers on
+  `cloudflare/full-migration` when `worker/**` changes, + `workflow_dispatch`)
+- **Required Worker secrets** (server-side; set via the workflow's `wrangler secret put`
+  from GitHub Secrets, or manually in the Cloudflare dashboard):
+  - `SUPABASE_URL` — same value as `VITE_SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY` — Supabase **service role** key (⚠️ never expose to the
+    frontend / never commit). **Add this GitHub secret** — it is not present yet.
+- Full details: `docs/cloudflare-worker-api.md`.
+
 ## 4. Intentionally NOT included yet
 
 - Cloudflare **Workers** API

@@ -1,0 +1,11 @@
+name = "task-management-api"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Read-only Supabase proxy skeleton. No D1 bindings, no routes, no custom domain yet.
+#
+# Runtime secrets are NOT stored here. Set them as Worker secrets (never committed):
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# (the deploy workflow sets them from GitHub Secrets). SUPABASE_SERVICE_ROLE_KEY is a
+# server-side secret and must never be exposed to the frontend.
