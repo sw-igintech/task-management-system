@@ -7,13 +7,26 @@
 
 | Branch | Purpose |
 |---|---|
-| `main` | **Production stable.** Vercel auto-deploys from here. Protected; PR-only. |
+| `main` | **Production stable.** Pushes auto-deploy to **Cloudflare** (see below). PR-preferred. |
 | `develop` | Integration branch — features/migration work land here first. |
-| `migration/*` | Migration work (e.g. `migration/01-git-ci-baseline`). |
+| `migration/*` · `cloudflare/full-migration` | Migration work / staging deploys. |
 | `feature/*` | Normal feature branches. |
 
-**Tags** mark stable releases, e.g. `v0.1.0-supabase-vercel-stable` (the last known-good
-Vercel + Supabase baseline before the Cloudflare migration).
+**Tags** mark stable releases: `v0.1.0-supabase-vercel-stable` (initial baseline) and
+`v0.1.0-vercel-supabase-before-cloudflare-cutover` (pre-cutover rollback point).
+
+## Continuous deploy (post-cutover)
+
+Pushing to **`main`** automatically deploys the official **Cloudflare** production:
+
+- **Deploy Cloudflare Pages Production** — runs on every push to `main` (build gate; failed
+  build blocks deploy) → `https://task-management-system-3nm.pages.dev`.
+- **Deploy Cloudflare Worker Production** — runs on push to `main` when `worker/**` changes →
+  Worker `task-management-api-production` (D1 production).
+- **D1 Production Import is manual (`workflow_dispatch`) only** — a code push must never
+  overwrite D1 production data.
+- Runtime task/person edits go **Browser → Worker → D1 production** (not via git).
+- Vercel + Supabase remain live as **rollback** (≥ 1–2 weeks); do not delete yet.
 
 ## Rules
 

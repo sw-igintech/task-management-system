@@ -6,13 +6,23 @@ name: Deploy Cloudflare Pages Production
 #
 # This is the official Cloudflare production frontend. It does NOT change DNS/custom domain,
 # does NOT disable Vercel/Supabase (kept as rollback), and uses NO Cloudflare Git
-# integration (GitHub Actions owns deploy). MANUAL trigger only.
+# integration (GitHub Actions owns deploy).
+#
+# Runs automatically on every push to main (build failure blocks deploy), plus manual
+# dispatch. It only deploys the static frontend — it never touches D1 data.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Prevent overlapping production deploys; let the newest push win.
+concurrency:
+  group: pages-production
+  cancel-in-progress: true
 
 env:
   VITE_USE_WORKER_API: 'true'

@@ -172,9 +172,19 @@ https://task-management-system-3nm.pages.dev
 - **Production Worker:** `task-management-api-production` →
   `https://task-management-api-production.sw-590.workers.dev`.
 - **D1 production:** `task-management-production` (`a5f4558a-d8db-41ba-9d2a-a5cd9210eb16`).
-- **Workflows (all `workflow_dispatch`-only):** `deploy-cloudflare-pages-production.yml`
-  (official prod frontend), `deploy-cloudflare-worker-production.yml` (prod Worker),
-  `d1-production-import.yml` (refresh D1 prod from Supabase).
+- **CI/CD (push to `main`):**
+  - `deploy-cloudflare-pages-production.yml` — **auto on every push to `main`** (+ dispatch).
+    Builds (`VITE_USE_WORKER_API=true`, `VITE_WORKER_API_URL=<prod Worker>`) and deploys the
+    official prod frontend. `concurrency: pages-production` (newest push wins); a failed build
+    blocks the deploy.
+  - `deploy-cloudflare-worker-production.yml` — **auto on push to `main` when `worker/**`
+    changes** (+ dispatch). Deploys `--env production` (prod Worker + prod D1 binding only;
+    never staging). `concurrency: worker-production`.
+  - `d1-production-import.yml` — **`workflow_dispatch` ONLY (manual)**. It refreshes/overwrites
+    D1 production data, so it must never run on a normal code push.
+- **Staging workflows** (`deploy-cloudflare-pages.yml`, `deploy-cloudflare-worker.yml`,
+  `d1-staging-import.yml`) trigger only on the `cloudflare/full-migration` branch — never on
+  `main`. Kept for staging validation.
 - **No DNS/custom domain** configured; **no auth**; Vercel + Supabase remain live as rollback.
 
 ## 4. Intentionally NOT included yet
