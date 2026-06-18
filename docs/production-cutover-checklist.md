@@ -40,6 +40,8 @@ On the production-candidate URL, confirm:
 - [ ] Smart Views (incl. By Person merge behavior)
 - [ ] `@TASK` autocomplete in Notes/Description
 - [ ] `@TASK` link click jumps to & opens the referenced task
+- [ ] `@`-mention autocomplete also suggests **people** (`@Mat` → Matan); selecting inserts a
+      mention that renders as `@Name` in the expanded (read-only) task view
 - [ ] Description/Notes bullet behavior (`• (DD.MM.YY) `, Enter vs Shift+Enter)
 - [ ] Closed Date field
 - [ ] Opened by field
@@ -81,3 +83,15 @@ cleanup of the old paths.
 There is **no app-level authentication** on the Worker API (staging or production candidate).
 The user has accepted this risk for now; it must be addressed (auth/access control) before
 broad production exposure. Documented, not blocking the candidate build.
+
+## 7. Person mentions & email notifications
+
+The person-mention feature is live. Email notifications (Resend) are **scaffolded but
+DISABLED by default** (`EMAIL_ENABLED=false`) — no email is sent until Resend is configured
+and explicitly enabled. Task create/update always succeeds regardless of email state.
+
+- **Prerequisite before merge/deploy:** D1 production must have the `people.email` column
+  (run **D1 Apply Migrations** → `production`, or confirm via `PRAGMA table_info(people)`).
+- Enabling real email later requires Resend account + verified sender + `RESEND_API_KEY`
+  secret + `EMAIL_FROM` + `EMAIL_ENABLED="true"` + people email addresses. Full steps:
+  [`email-notifications.md`](email-notifications.md).

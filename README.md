@@ -13,6 +13,9 @@ A complete task management system for the engineering team, built with Vite + Re
 - Dashboard with stats, status breakdown, and per-person task counts
 - TanStack Table v8 with sortable columns and expandable rows
 - React Hook Form + Zod validation
+- `@`-mentions in Description/Notes for both tasks (`@TASK-123`) and people (`@Matan`)
+- Email notifications (Resend) for assignments & mentions — **scaffolded but DISABLED by
+  default** (`EMAIL_ENABLED=false`); see [`docs/email-notifications.md`](docs/email-notifications.md)
 
 ## Quick Start
 
@@ -103,6 +106,7 @@ npx tsx scripts/import_pdf_tasks.ts --import
 - [`docs/cloudflare-migration-plan.md`](docs/cloudflare-migration-plan.md) — planned migration to Cloudflare (in progress: Pages staging)
 - [`docs/cloudflare-setup.md`](docs/cloudflare-setup.md) — Cloudflare Pages staging deploy: secrets, workflow, troubleshooting
 - [`docs/cloudflare-worker-api.md`](docs/cloudflare-worker-api.md) — read-only Cloudflare Worker API (`task-management-api`) over Supabase
+- [`docs/email-notifications.md`](docs/email-notifications.md) — person mentions + Resend email notifications (disabled by default)
 - [`docs/import-tasks.md`](docs/import-tasks.md) · [`docs/sync-tasks.md`](docs/sync-tasks.md) · [`docs/filtering.md`](docs/filtering.md) · [`docs/task-references.md`](docs/task-references.md) · [`docs/task-text-traceability.md`](docs/task-text-traceability.md)
 
 CI runs on every PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (build + checks; no deploy).

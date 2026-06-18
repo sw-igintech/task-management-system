@@ -10,6 +10,15 @@ binding = "DB"
 database_name = "task-management-staging"
 database_id = "e262c9ce-8d5f-46d0-86c7-24030b9e760d"
 
+# ── Email notifications (Resend) — DISABLED BY DEFAULT ──────────────────────
+# EMAIL_ENABLED must be exactly "true" to send. EMAIL_FROM is a non-secret verified
+# sender address (left blank until configured). RESEND_API_KEY is a SECRET and is NOT
+# stored here — set it with `wrangler secret put RESEND_API_KEY` (see
+# docs/email-notifications.md). The Worker deploys and runs fine with email disabled.
+[vars]
+EMAIL_ENABLED = "false"
+EMAIL_FROM = ""
+
 # ── Production candidate environment ────────────────────────────────────────
 # Deployed with `wrangler deploy --env production` (manual workflow only). Separate Worker
 # `task-management-api-production` bound to D1 `task-management-production`. Does NOT touch
@@ -21,6 +30,14 @@ name = "task-management-api-production"
 binding = "DB"
 database_name = "task-management-production"
 database_id = "a5f4558a-d8db-41ba-9d2a-a5cd9210eb16"
+
+# Email stays DISABLED in production until Resend is configured. To enable later:
+#   wrangler secret put RESEND_API_KEY --env production
+#   (set EMAIL_FROM to the verified sender and flip EMAIL_ENABLED to "true" below or
+#    via `wrangler secret put`/dashboard), then redeploy the production Worker.
+[env.production.vars]
+EMAIL_ENABLED = "false"
+EMAIL_FROM = ""
 
 # SECURITY: write endpoints have NO app auth yet — staging/internal & production-candidate
 # only. Add access control before any broad/production exposure.

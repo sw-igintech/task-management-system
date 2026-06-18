@@ -1,0 +1,21 @@
+-- Migration: add optional email address to people.
+-- Date: 2026-06-18
+--
+-- Purpose: people.email backs the (default-disabled) email-notification feature.
+-- It is OPTIONAL — the app works correctly when email is NULL.
+--
+-- IMPORTANT NOTES
+--  * SQLite/D1 `ALTER TABLE ... ADD COLUMN` does NOT support `IF NOT EXISTS`.
+--    If the column already exists (the current d1/schema.sql already declares it,
+--    so any DB created from that schema has it), this statement fails with
+--    "duplicate column name: email". That error is SAFE to ignore — it means the
+--    column is already present. The d1-apply-migrations workflow tolerates it.
+--  * This migration is additive and NON-DESTRUCTIVE. It never drops or imports data.
+--
+-- Manual application (read the value with `wrangler d1 execute ... --command "PRAGMA table_info(people);"`
+-- first if you want to confirm whether the column already exists):
+--   npx wrangler d1 execute task-management-production --remote \
+--     --file=d1/migrations/2026-06-18_add_people_email.sql
+-- (use task-management-staging for staging)
+
+ALTER TABLE people ADD COLUMN email TEXT;

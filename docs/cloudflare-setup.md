@@ -187,13 +187,33 @@ https://task-management-system-3nm.pages.dev
   `main`. Kept for staging validation.
 - **No DNS/custom domain** configured; **no auth**; Vercel + Supabase remain live as rollback.
 
+## 3g. Email notifications (Resend) — optional, DISABLED by default
+
+Task create/update can send Resend emails (assignment + person mentions), but it is **off by
+default** and never blocks a deploy or a task mutation. The production Worker deploys fine
+with **no** email config.
+
+- **Non-secret vars** (in `worker/wrangler.toml`): `EMAIL_ENABLED="false"` (default) and
+  `EMAIL_FROM=""`. To enable later, set `EMAIL_FROM` to a verified Resend sender and
+  `EMAIL_ENABLED="true"`, then redeploy the production Worker.
+- **Secret** (manual — not in CI, not committed):
+  ```bash
+  cd worker
+  npx wrangler secret put RESEND_API_KEY --env production
+  ```
+  The production deploy workflow does **not** require or upload this secret, so deploys
+  succeed whether or not email is configured. Set it manually only when enabling email.
+- **D1 prerequisite:** run **D1 Apply Migrations** (`workflow_dispatch`) so `people.email`
+  exists before relying on notifications.
+- Full behaviour, free-tier limits, and the enable checklist: `docs/email-notifications.md`.
+
 ## 4. Intentionally NOT included yet
 
-- Cloudflare **Workers** API
-- Cloudflare **D1** database
-- **Email** (Resend/SendGrid)
 - **DNS** / custom domain / production cutover
 - Any replacement or shutdown of Vercel or Supabase
+- **Real email sending** — the Resend integration is scaffolded but **disabled by default**
+  (`EMAIL_ENABLED=false`); see section 3g and `docs/email-notifications.md`.
+- **Auth / access control** on the Worker API (accepted risk)
 
 ## 5. Troubleshooting
 

@@ -147,6 +147,26 @@ runtime secrets** (no `SUPABASE_URL`, no `SUPABASE_SERVICE_ROLE_KEY`). Deploymen
 > **no longer used by this Worker**. Any Worker secrets set previously are ignored by the new
 > D1 code. `/api/*` no longer returns `503` for missing Supabase config.
 
+## Email notifications (optional, DISABLED by default)
+
+`POST /api/tasks` and `PATCH /api/tasks/:id` can trigger Resend email notifications
+(assignment + person mentions). This is **off by default** and **never affects the
+response**: emails run detached via `ctx.waitUntil(...)`, and the task create/update
+succeeds even if email is disabled, misconfigured, or Resend fails.
+
+Optional Worker env (all absent-safe; the Worker deploys fine without them):
+
+| Var | Type | Default | Notes |
+|---|---|---|---|
+| `EMAIL_ENABLED` | var | `"false"` | Must be exactly `"true"` to send. |
+| `EMAIL_FROM` | var | `""` | Verified Resend sender. |
+| `RESEND_API_KEY` | **secret** | _(unset)_ | `wrangler secret put RESEND_API_KEY` — never committed. |
+
+`EMAIL_ENABLED`/`EMAIL_FROM` are declared in `worker/wrangler.toml` (`[vars]` /
+`[env.production.vars]`). Code lives in `worker/src/email.ts`. Full behaviour, recipient
+de-duplication, content, free-tier limits, and the enable checklist:
+[`docs/email-notifications.md`](email-notifications.md).
+
 ## Deployment
 
 - Workflow: `.github/workflows/deploy-cloudflare-worker.yml` (name **Deploy Cloudflare Worker**)
@@ -205,4 +225,5 @@ The frontend can now use this Worker API instead of direct Supabase, gated by en
    stays the default fallback).
 2. Add auth/permissions before exposing write endpoints to production.
 3. Replace Supabase with Cloudflare D1 behind the same Worker API.
-4. Email notifications (Resend/SendGrid) from the Worker.
+4. Email notifications (Resend) from the Worker — **scaffolded, disabled by default**
+   (see the section above and [`docs/email-notifications.md`](email-notifications.md)).

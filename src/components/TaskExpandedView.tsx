@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { FileText, Calendar, User, UserPlus, Clock, Hash, Tag } from 'lucide-react';
-import type { Task } from '../types';
+import type { Task, Person } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
 import { formatDate, formatTaskKey, isOverdue } from '../lib/utils';
 import { TaskTextWithLinks } from './TaskTextWithLinks';
@@ -7,6 +8,8 @@ import { format, parseISO } from 'date-fns';
 
 interface TaskExpandedViewProps {
   task: Task;
+  // People list, used to resolve @person:<id> mentions to the current @Name.
+  people: Person[];
   // Resolver + handler for @<number> cross-task references inside Notes/Description.
   getTaskByNumber: (n: number) => Task | undefined;
   onTaskReference: (n: number) => void;
@@ -20,8 +23,10 @@ function formatDateTime(dt: string) {
   }
 }
 
-export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: TaskExpandedViewProps) {
+export function TaskExpandedView({ task, people, getTaskByNumber, onTaskReference }: TaskExpandedViewProps) {
   const overdue = isOverdue(task);
+  const personById = useMemo(() => new Map(people.map(p => [p.id, p])), [people]);
+  const getPersonById = (id: string) => personById.get(id);
 
   return (
     <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
@@ -37,6 +42,7 @@ export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: Tas
                 <TaskTextWithLinks
                   text={task.description}
                   getTaskByNumber={getTaskByNumber}
+                  getPersonById={getPersonById}
                   onReference={onTaskReference}
                   className="text-sm text-gray-700"
                 />
@@ -54,6 +60,7 @@ export function TaskExpandedView({ task, getTaskByNumber, onTaskReference }: Tas
                 <TaskTextWithLinks
                   text={task.notes}
                   getTaskByNumber={getTaskByNumber}
+                  getPersonById={getPersonById}
                   onReference={onTaskReference}
                   className="text-sm text-gray-700"
                 />

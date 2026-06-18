@@ -50,6 +50,12 @@ jobs:
 
       # --env production → name task-management-api-production + D1 production binding.
       # Uses the same D1-only Worker code; no Supabase runtime secrets.
+      #
+      # EMAIL (optional, disabled by default): EMAIL_ENABLED/EMAIL_FROM are declared as
+      # non-secret vars in wrangler.toml, so this deploy needs NO email config to succeed.
+      # The RESEND_API_KEY secret is intentionally NOT uploaded here — set it manually only
+      # when enabling email: `wrangler secret put RESEND_API_KEY --env production`
+      # (see docs/email-notifications.md). Deploys must never fail because email is unset.
       - name: Deploy production Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
