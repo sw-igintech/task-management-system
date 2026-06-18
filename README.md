@@ -16,7 +16,7 @@ A complete task management system for the engineering team, built with Vite + Re
 - `@`-mentions in Description/Notes for both tasks (`@TASK-123`) and people (`@Matan`) —
   shown and edited as friendly `@Name` (stored stably as `@person:<id>`), rendered **blue**
 - "Overdue by X days" indicator under Due Date on expanded/edited tasks
-- Email notifications (Resend, Hebrew) for assignments & mentions — **ENABLED in production**
+- Email notifications (Resend, English) for assignments & mentions — **ENABLED in production**
   (`EMAIL_ENABLED=true`, sender domain `task-notification.xyz`); assignment emails name the
   opener, every email deep-links to the specific task (`?task=TASK-<n>`, opens it expanded);
   best-effort, never blocks a task save; see [`docs/email-notifications.md`](docs/email-notifications.md)

@@ -95,7 +95,7 @@ async function loadPeopleById(env: Env): Promise<Map<string, PersonRow>> {
 }
 
 // Best-available actor name for a task: the opener/creator (there is no current-user
-// concept on this API). Returns null when unresolved → emails fall back to "מישהו".
+// concept on this API). Returns null when unresolved → emails show "Unknown" / "Someone".
 function actorNameFor(task: TaskRow, peopleById: Map<string, PersonRow>): string | null {
   const id = task.opened_by_person_id;
   return id ? (peopleById.get(id)?.name ?? null) : null;

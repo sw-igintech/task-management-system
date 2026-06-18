@@ -150,47 +150,53 @@ never waits on it. **A task create/update always succeeds**, regardless of email
 - Resend API errors → the task mutation is **not** rolled back; a safe failure is logged
   (HTTP status + short excerpt, never the API key); task op still succeeds.
 
-### Email content (Hebrew)
+### Email content (English)
 
-Plain text, concise (no full description/notes). Each email includes a **deep link** that
-opens the specific task already expanded (see *Deep links* below). `<actor>` is the
-opener/creator name (best-available actor — there is no current-user concept; falls back
-to `מישהו`). `<number>` = task number.
+All notification emails are in **English** (plain text, concise — no full
+description/notes). Each email includes an explicit **Opened by:** line and a **deep link**
+that opens the specific task already expanded (see *Deep links* below). `<number>` = task
+number; `<actor>`/opener = the `opened_by_person_id` name (best-available actor — there is
+no current-user concept).
 
 **New assignment** — includes who opened the task:
 ```
-Subject: משימה חדשה הוקצתה אליך: TASK-<number> - <title>
+Subject: New task assigned: TASK-<number> - <title>
 
-היי <recipient name>,
+Hi <recipient name>,
 
-<actor> פתח עבורך משימה חדשה.
+A new task was assigned to you.
 
-משימה: TASK-<number> - <title>
-סטטוס: <status (Hebrew)>
-עדיפות: <priority>
-תאריך יעד: <due_date or "ללא תאריך יעד">
+Task: TASK-<number> - <title>
+Opened by: <opened_by name, or "Unknown">
+Status: <status>
+Priority: <priority>
+Due date: <due_date, or "No due date">
 
-לפתיחת המשימה:
-https://task-management-system-3nm.pages.dev?task=TASK-<number>
+Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```
 
-**Mention** — e.g. "היי מתן, עמית הזכיר אותך במשימה TASK-135 - שיפור הקוד בתוכנה.":
+**Mention**:
 ```
-Subject: הוזכרת במשימה TASK-<number> - <title>
+Subject: You were mentioned in TASK-<number> - <title>
 
-היי <recipient name>,
+Hi <recipient name>,
 
-<actor> הזכיר אותך במשימה TASK-<number> - <title>.
+<actor name> mentioned you in a task.
 
-לפתיחת המשימה:
-https://task-management-system-3nm.pages.dev?task=TASK-<number>
+Task: TASK-<number> - <title>
+Opened by: <opened_by name, or "Unknown">
+
+Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```
 
-Hebrew status labels: לא התחיל / בתהליך / בהמתנה / לבדיקה / הושלם.
+English status labels: Not Started / In Progress / On Hold / Need to Review / Done.
 
-**Actor source / limitation:** for both create and update the actor is resolved from the
-task's `opened_by_person_id` (the API has no authenticated current-user). So an update made
-by a different person still shows the original opener as the actor. Documented, by design.
+**Actor / opener source & limitation:** for both create and update, the actor and the
+"Opened by" line are resolved from the task's `opened_by_person_id` (this API has no
+authenticated current-user). So an update made by a different person still shows the
+original opener as the actor. If the opener is missing/unresolved, the assignment email
+shows `Opened by: Unknown` and the mention email falls back to
+`Someone mentioned you in a task.` Documented, by design.
 
 When `EMAIL_REPLY_TO` is set, a `reply_to` header (`sw@igintech.com`) is added so replies
 route to the team inbox rather than the no-reply sender.

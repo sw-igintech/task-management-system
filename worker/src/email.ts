@@ -47,8 +47,8 @@ export interface TaskRow {
   priority?: number | null;
   due_date?: string | null;
   responsible_person_id?: string | null;
-  // Who opened/created the task. Resolved to a name and shown as the actor in emails
-  // ("<opener> פתח עבורך…" / "<opener> הזכיר אותך…").
+  // Who opened/created the task. Resolved to a name and shown as the actor/opener in
+  // emails ("Opened by: <name>" and "<name> mentioned you in a task.").
   opened_by_person_id?: string | null;
 }
 
@@ -131,49 +131,60 @@ export function computeUpdateRecipients(
   return [...map.values()];
 }
 
-// Hebrew status labels for email bodies.
-const STATUS_LABELS_HE: Record<string, string> = {
-  not_started: 'לא התחיל',
-  in_progress: 'בתהליך',
-  on_hold: 'בהמתנה',
-  need_to_review: 'לבדיקה',
-  done: 'הושלם',
+// English status labels for email bodies.
+const STATUS_LABELS: Record<string, string> = {
+  not_started: 'Not Started',
+  in_progress: 'In Progress',
+  on_hold: 'On Hold',
+  need_to_review: 'Need to Review',
+  done: 'Done',
 };
 
 function taskKey(task: TaskRow): string {
   return task.task_number == null ? 'TASK' : `TASK-${task.task_number}`;
 }
 
-// Builds the Hebrew email for a recipient. `actorName` is the opener/creator name (the
-// best-available actor — there is no current-user concept). Falls back to "מישהו".
-// Both emails include a deep link that opens the specific task already expanded.
-function buildEmail(recipient: Recipient, task: TaskRow, actorName: string | null): { subject: string; text: string } {
+// Builds the (English) email for a recipient. `actorName` is the opener/creator name,
+// resolved from opened_by_person_id — the best-available actor, since this API has no
+// authenticated current-user concept (the same opener name is used as the "mentioned by"
+// actor on updates too). Unresolved → assignment shows "Opened by: Unknown"; mention
+// falls back to "Someone mentioned you in a task." Both emails include a deep link that
+// opens the specific task already expanded.
+export function buildEmail(recipient: Recipient, task: TaskRow, actorName: string | null): { subject: string; text: string } {
   const key = taskKey(task);
-  const title = task.title ?? '(ללא כותרת)';
+  const title = task.title ?? '(untitled)';
   const url = buildTaskUrl(task);
-  const actor = actorName && actorName.trim() ? actorName.trim() : 'מישהו';
+  const openedBy = actorName && actorName.trim() ? actorName.trim() : 'Unknown';
 
   if (recipient.kind === 'assignment') {
-    const status = task.status ? (STATUS_LABELS_HE[task.status] ?? task.status) : STATUS_LABELS_HE.not_started;
-    const due = task.due_date ? task.due_date : 'ללא תאריך יעד';
+    const status = task.status ? (STATUS_LABELS[task.status] ?? task.status) : STATUS_LABELS.not_started;
+    const due = task.due_date ? task.due_date : 'No due date';
     return {
-      subject: `משימה חדשה הוקצתה אליך: ${key} - ${title}`,
+      subject: `New task assigned: ${key} - ${title}`,
       text:
-        `היי ${recipient.name},\n\n` +
-        `${actor} פתח עבורך משימה חדשה.\n\n` +
-        `משימה: ${key} - ${title}\n` +
-        `סטטוס: ${status}\n` +
-        `עדיפות: ${task.priority ?? '—'}\n` +
-        `תאריך יעד: ${due}\n\n` +
-        `לפתיחת המשימה:\n${url}\n`,
+        `Hi ${recipient.name},\n\n` +
+        `A new task was assigned to you.\n\n` +
+        `Task: ${key} - ${title}\n` +
+        `Opened by: ${openedBy}\n` +
+        `Status: ${status}\n` +
+        `Priority: ${task.priority ?? '—'}\n` +
+        `Due date: ${due}\n\n` +
+        `Open task: ${url}\n`,
     };
   }
+
+  const mentionedBy =
+    actorName && actorName.trim()
+      ? `${actorName.trim()} mentioned you in a task.`
+      : 'Someone mentioned you in a task.';
   return {
-    subject: `הוזכרת במשימה ${key} - ${title}`,
+    subject: `You were mentioned in ${key} - ${title}`,
     text:
-      `היי ${recipient.name},\n\n` +
-      `${actor} הזכיר אותך במשימה ${key} - ${title}.\n\n` +
-      `לפתיחת המשימה:\n${url}\n`,
+      `Hi ${recipient.name},\n\n` +
+      `${mentionedBy}\n\n` +
+      `Task: ${key} - ${title}\n` +
+      `Opened by: ${openedBy}\n\n` +
+      `Open task: ${url}\n`,
   };
 }
 

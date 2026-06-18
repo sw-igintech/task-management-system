@@ -96,8 +96,8 @@ always succeeds regardless of email state (best-effort, detached send).
 - D1 production has the `people.email` column and populated addresses.
 - Staging Worker stays `EMAIL_ENABLED="false"` (no real sends from staging).
 - An "Overdue by X days" indicator shows under Due Date on expanded/edited tasks.
-- **Mention emails are live** (Hebrew); assignment emails name the opener; both link to
-  `…?task=TASK-<number>` which opens that task already expanded.
+- **Mention emails are live** (English); assignment emails include an `Opened by:` line and
+  name the opener; both link to `…?task=TASK-<number>` which opens that task already expanded.
 - Mentions & task references render **blue** (read-only + dropdown); edit mode shows a
   blue read-only preview beneath the textarea (native textarea can't colour partial text).
 - Full details: [`email-notifications.md`](email-notifications.md).
