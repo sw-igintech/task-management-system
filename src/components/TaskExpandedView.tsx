@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { FileText, Calendar, User, UserPlus, Clock, Hash, Tag } from 'lucide-react';
 import type { Task, Person } from '../types';
 import { StatusBadge, PriorityBadge } from './ui/Badge';
-import { formatDate, formatTaskKey, isOverdue } from '../lib/utils';
+import { formatDate, formatTaskKey, isOverdue, formatOverdue } from '../lib/utils';
 import { TaskTextWithLinks } from './TaskTextWithLinks';
 import { format, parseISO } from 'date-fns';
 
@@ -25,6 +25,8 @@ function formatDateTime(dt: string) {
 
 export function TaskExpandedView({ task, people, getTaskByNumber, onTaskReference }: TaskExpandedViewProps) {
   const overdue = isOverdue(task);
+  // "Overdue by X days" sub-line under Due date (hidden for done/closed/future/no-date).
+  const overdueLabel = formatOverdue(task);
   const personById = useMemo(() => new Map(people.map(p => [p.id, p])), [people]);
   const getPersonById = (id: string) => personById.get(id);
 
@@ -110,6 +112,14 @@ export function TaskExpandedView({ task, people, getTaskByNumber, onTaskReferenc
               {overdue && ' (overdue)'}
             </span>
           </div>
+          {overdueLabel && (
+            <div className="flex items-center gap-2">
+              {/* Spacers align the label under the Due date value (icon + label columns). */}
+              <span className="shrink-0" style={{ width: 13 }} aria-hidden="true" />
+              <span className="w-20 shrink-0" aria-hidden="true" />
+              <span className="text-xs text-red-600">{overdueLabel}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <Calendar size={13} className="text-gray-400" />
             <span className="text-xs text-gray-500 w-20 shrink-0">Closed date</span>

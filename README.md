@@ -13,9 +13,12 @@ A complete task management system for the engineering team, built with Vite + Re
 - Dashboard with stats, status breakdown, and per-person task counts
 - TanStack Table v8 with sortable columns and expandable rows
 - React Hook Form + Zod validation
-- `@`-mentions in Description/Notes for both tasks (`@TASK-123`) and people (`@Matan`)
-- Email notifications (Resend) for assignments & mentions — **scaffolded but DISABLED by
-  default** (`EMAIL_ENABLED=false`); see [`docs/email-notifications.md`](docs/email-notifications.md)
+- `@`-mentions in Description/Notes for both tasks (`@TASK-123`) and people (`@Matan`) —
+  shown and edited as friendly `@Name` (stored stably as `@person:<id>`)
+- "Overdue by X days" indicator under Due Date on expanded/edited tasks
+- Email notifications (Resend) for assignments & mentions — **ENABLED in production**
+  (`EMAIL_ENABLED=true`, sender domain `task-notification.xyz`); best-effort, never blocks a
+  task save; see [`docs/email-notifications.md`](docs/email-notifications.md)
 
 ## Quick Start
 

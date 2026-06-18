@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format, isAfter, isBefore, startOfDay, endOfDay, addDays, parseISO } from 'date-fns';
+import { format, isAfter, isBefore, startOfDay, endOfDay, addDays, parseISO, differenceInCalendarDays } from 'date-fns';
 import type { Task, TaskStatus, PriorityLevel } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
@@ -36,6 +36,39 @@ export function isOverdue(task: Task): boolean {
   const today = startOfDay(new Date());
   const dueDate = startOfDay(parseISO(task.due_date));
   return isBefore(dueDate, today);
+}
+
+// Whole calendar days a task is overdue relative to TODAY (local time, date-only — so a
+// YYYY-MM-DD due date never shifts by timezone). Returns 0 (not overdue) when:
+//   * due_date is missing, today, or in the future;
+//   * the task is done; or
+//   * the task has a closed_date (already closed).
+// Display-only; mutates nothing. Accepts a partial so the edit form can pass live values.
+export function overdueDays(input: {
+  due_date?: string | null;
+  status?: TaskStatus | string | null;
+  closed_date?: string | null;
+}): number {
+  const { due_date, status, closed_date } = input;
+  if (!due_date) return 0;
+  if (status === 'done') return 0;
+  if (closed_date) return 0;
+  const due = startOfDay(parseISO(due_date));
+  if (Number.isNaN(due.getTime())) return 0;
+  const diff = differenceInCalendarDays(startOfDay(new Date()), due);
+  return diff > 0 ? diff : 0;
+}
+
+// Human label for an overdue task, e.g. "Overdue by 1 day" / "Overdue by 3 days".
+// Returns null when the task is not overdue (so callers render nothing).
+export function formatOverdue(input: {
+  due_date?: string | null;
+  status?: TaskStatus | string | null;
+  closed_date?: string | null;
+}): string | null {
+  const d = overdueDays(input);
+  if (d <= 0) return null;
+  return `Overdue by ${d} ${d === 1 ? 'day' : 'days'}`;
 }
 
 export function isDueThisWeek(task: Task): boolean {

@@ -31,13 +31,15 @@ binding = "DB"
 database_name = "task-management-production"
 database_id = "a5f4558a-d8db-41ba-9d2a-a5cd9210eb16"
 
-# Email stays DISABLED in production until Resend is configured. To enable later:
-#   wrangler secret put RESEND_API_KEY --env production
-#   (set EMAIL_FROM to the verified sender and flip EMAIL_ENABLED to "true" below or
-#    via `wrangler secret put`/dashboard), then redeploy the production Worker.
+# Email is ENABLED in production. Resend domain `task-notification.xyz` is verified.
+# RESEND_API_KEY is a SECRET stored in Cloudflare (set via `wrangler secret put
+# RESEND_API_KEY --env production`) — it is NEVER stored here. EMAIL_FROM uses the
+# verified sender; EMAIL_REPLY_TO routes replies to the team inbox. Sending is best-effort:
+# a missing key / Resend failure never breaks a task create/update (see email.ts).
 [env.production.vars]
-EMAIL_ENABLED = "false"
-EMAIL_FROM = ""
+EMAIL_ENABLED = "true"
+EMAIL_FROM = "Task Manager <notifications@task-notification.xyz>"
+EMAIL_REPLY_TO = "sw@igintech.com"
 
 # SECURITY: write endpoints have NO app auth yet — staging/internal & production-candidate
 # only. Add access control before any broad/production exposure.
