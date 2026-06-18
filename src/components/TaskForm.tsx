@@ -9,8 +9,13 @@ import { Select } from './ui/Select';
 import { Textarea } from './ui/Textarea';
 import { Button } from './ui/Button';
 import { MentionSuggestions } from './MentionSuggestions';
-import { getMentionItems, buildPersonMention, type MentionItem } from '../lib/mentions';
-import { STATUS_LABELS, PRIORITY_LABELS } from '../lib/utils';
+import {
+  getMentionItems,
+  prepareMentionsForEditing,
+  serializeMentionsForStorage,
+  type MentionItem,
+} from '../lib/mentions';
+import { STATUS_LABELS, PRIORITY_LABELS, formatOverdue } from '../lib/utils';
 
 // Detects an in-progress @-mention token ending at the caret. The @ must be at the
 // start of the field or after a separator (space/newline/( [ { : ,), so emails like
@@ -71,9 +76,10 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } = useForm<TaskFormData>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(taskSchema) as any,
     defaultValues: {
       title: task?.title ?? '',
@@ -83,13 +89,29 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       opened_by_person_id: task?.opened_by_person_id ?? '',
       due_date: task?.due_date ?? '',
       closed_date: task?.closed_date ?? '',
-      notes: task?.notes ?? '',
-      description: task?.description ?? '',
+      // Show friendly "@Name" while editing; raw "@person:<id>" tokens never reach the UI.
+      notes: prepareMentionsForEditing(task?.notes ?? '', people),
+      description: prepareMentionsForEditing(task?.description ?? '', people),
     },
   });
 
+  // On save, convert the friendly "@Name" mentions back to the stable "@person:<id>"
+  // storage form. @TASK references and ordinary text are left untouched.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onFormSubmit = handleSubmit((data: any) => onSubmit(data as TaskFormData));
+  const onFormSubmit = handleSubmit((data: any) =>
+    onSubmit({
+      ...(data as TaskFormData),
+      description: serializeMentionsForStorage(data.description ?? '', people),
+      notes: serializeMentionsForStorage(data.notes ?? '', people),
+    }),
+  );
+
+  // Live overdue indicator under the Due Date field (display-only; mutates nothing).
+  const overdueLabel = formatOverdue({
+    due_date: watch('due_date'),
+    status: watch('status'),
+    closed_date: watch('closed_date'),
+  });
 
   // Automatic dated traceability prefix for Notes/Description.
   // Per-field flag: whether the CURRENT focus interaction already auto-inserted a
@@ -199,7 +221,8 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       if (item.task.task_number == null) return;
       core = `@TASK-${item.task.task_number}`;
     } else {
-      core = buildPersonMention(item.person.id);
+      // Insert the friendly display form; serialized to "@person:<id>" on save.
+      core = `@${item.person.name}`;
     }
     const value = el.value;
     const rest = value.slice(mention.end);
@@ -287,12 +310,17 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
           ))}
         </Select>
 
-        <Input
-          label="Due Date"
-          type="date"
-          {...register('due_date')}
-          error={errors.due_date?.message}
-        />
+        <div>
+          <Input
+            label="Due Date"
+            type="date"
+            {...register('due_date')}
+            error={errors.due_date?.message}
+          />
+          {overdueLabel && (
+            <p className="text-xs text-red-600 mt-1">{overdueLabel}</p>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

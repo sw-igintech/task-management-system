@@ -50,6 +50,63 @@ export function extractTaskPersonMentionIds(
   return Array.from(new Set(all));
 }
 
+// ── Display ⇄ storage conversion for person mentions ─────────────────────────
+// Storage form (in DB):   "@person:<id>"  — stable, rename-safe.
+// Display/edit form (UI): "@Name"         — friendly; never exposes the UUID.
+// These three helpers convert between the two so the user never sees a raw token.
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Read-only / plain-text display: "@person:<id>" → "@Name" ("@unknown" if the id no
+// longer resolves). The styled UI uses <TaskTextWithLinks>; this is the plain-text twin.
+export function renderStoredMentionsForDisplay(text: string | null | undefined, people: Person[]): string {
+  if (!text) return text ?? '';
+  const byId = new Map(people.map(p => [p.id, p.name]));
+  return text.replace(new RegExp(PERSON_MENTION_SOURCE, 'g'), (_m, id: string) => {
+    const name = byId.get(id);
+    return name ? `@${name}` : '@unknown';
+  });
+}
+
+// Edit-mode prep: "@person:<id>" → "@Name" so the textarea shows friendly names. An id
+// that no longer resolves is LEFT as the raw token (not "@unknown") so the mention is
+// preserved verbatim on save rather than silently lost. Current people all resolve.
+export function prepareMentionsForEditing(text: string | null | undefined, people: Person[]): string {
+  if (!text) return text ?? '';
+  const byId = new Map(people.map(p => [p.id, p.name]));
+  return text.replace(new RegExp(PERSON_MENTION_SOURCE, 'g'), (m, id: string) => {
+    const name = byId.get(id);
+    return name ? `@${name}` : m;
+  });
+}
+
+// Save-time serialization: "@Name" → "@person:<id>" for every known person name (matched
+// case-insensitively, at a mention boundary, longest-name-first). It never touches
+// "@TASK-123" task references (names are non-numeric), never re-wraps an existing
+// "@person:<id>" token, and leaves unknown "@Foo" text untouched.
+// Duplicate names (none currently) resolve deterministically to the lowest id.
+export function serializeMentionsForStorage(text: string | null | undefined, people: Person[]): string {
+  if (!text) return text ?? '';
+  if (people.length === 0) return text;
+  const byName = new Map<string, string>();
+  for (const p of [...people].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const key = p.name.toLowerCase();
+    if (!byName.has(key)) byName.set(key, p.id);
+  }
+  const alt = [...people]
+    .map(p => p.name)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|');
+  const re = new RegExp(`(?<![A-Za-z0-9_])@(${alt})(?![A-Za-z0-9_])`, 'gi');
+  return text.replace(re, (m, name: string) => {
+    const id = byName.get(name.toLowerCase());
+    return id ? `${PERSON_MENTION_PREFIX}${id}` : m;
+  });
+}
+
 // A single entry in the combined @-mention autocomplete dropdown.
 export type MentionItem =
   | { kind: 'task'; task: Task }

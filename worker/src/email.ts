@@ -20,6 +20,9 @@ export interface EmailEnv {
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
   EMAIL_ENABLED?: string;
+  // Optional Reply-To header. When set, added to the Resend payload; when absent the
+  // email still sends without a reply-to. Never required.
+  EMAIL_REPLY_TO?: string;
 }
 
 // Minimal shapes (rows come straight from D1 `RETURNING *` / SELECT).
@@ -162,6 +165,10 @@ function buildEmail(recipient: Recipient, task: TaskRow): { subject: string; tex
 // API key. Caller guarantees env.RESEND_API_KEY / env.EMAIL_FROM are present.
 async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow): Promise<boolean> {
   const { subject, text } = buildEmail(recipient, task);
+  const payload: Record<string, unknown> = { from: env.EMAIL_FROM, to: [recipient.email], subject, text };
+  // Optional Reply-To: include only when configured; sending works fine without it.
+  const replyTo = env.EMAIL_REPLY_TO?.trim();
+  if (replyTo) payload.reply_to = replyTo;
   try {
     const res = await fetch(RESEND_ENDPOINT, {
       method: 'POST',
@@ -169,7 +176,7 @@ async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow)
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [recipient.email], subject, text }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       // Log status + a short body excerpt; the request never contains the key in its body.

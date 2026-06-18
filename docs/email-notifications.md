@@ -2,10 +2,16 @@
 
 This document covers two related features:
 
-1. **Person mentions** in task Description and Notes (live now).
-2. **Email notifications** (Resend) for new assignments and mentions — **scaffolded but
-   DISABLED by default**. No real email is ever sent until you configure Resend and set
-   `EMAIL_ENABLED=true`.
+1. **Person mentions** in task Description and Notes (live now). Users see and edit
+   friendly `@Name` mentions; the raw `@person:<id>` token is never shown.
+2. **Email notifications** (Resend) for new assignments and mentions — **ENABLED in
+   production** as of 2026-06-18 (`EMAIL_ENABLED=true`). Real emails are sent from the
+   verified domain `task-notification.xyz`.
+
+> **Status (production):** Email is **ON**. Resend domain `task-notification.xyz` is
+> Verified; sender `Task Manager <notifications@task-notification.xyz>`, Reply-To
+> `sw@igintech.com`; `RESEND_API_KEY` is stored as a Cloudflare Worker secret. Sending is
+> best-effort — a missing key or Resend failure never breaks a task create/update.
 
 ---
 
@@ -25,19 +31,33 @@ Arrow keys / Enter / Tab select; Escape closes. Selecting a person inserts a men
 |-------|----------------|
 | Stored in DB (`description` / `notes` text) | `@person:<person_id>` |
 | Read-only display (expanded task view) | `@Name` (highlighted) |
+| **Edit mode (textarea)** | `@Name` (friendly; converted on load/save) |
 
 **Why store the id, not the name?** The id is stable: renaming a person never breaks an
-existing mention, and duplicate names are never ambiguous. The read-only renderer resolves
-the id back to the *current* name at display time. If the id no longer matches a person
-(e.g. the person was removed), it renders a muted `@unknown` instead of crashing.
+existing mention, and duplicate names are never ambiguous. Resolution to the *current* name
+happens at display/edit time. If the id no longer matches a person (e.g. the person was
+removed), read-only renders a muted `@unknown` instead of crashing.
 
-### Edit-mode limitation (documented)
+### Edit mode shows `@Name`, not the raw token
 
-The Description/Notes editors are plain `<textarea>`s. In **edit mode** a person mention is
-shown as its raw stored token `@person:<id>`, not as `@Name`. This is intentional — a
-live token→name conversion layer inside the textarea would risk interfering with the
-existing dated-bullet logic (`• (DD.MM.YY)`, Enter/Shift+Enter). Read-only views always
-show the friendly `@Name`. (If a richer inline editor is added later, this can be revisited.)
+The Description/Notes editors are plain `<textarea>`s, but the raw `@person:<id>` token is
+**never** shown to the user. Conversion happens at the field boundary:
+
+- **On load (edit):** `prepareMentionsForEditing` rewrites stored `@person:<id>` → `@Name`
+  before the textarea is populated.
+- **On save:** `serializeMentionsForStorage` rewrites `@Name` → `@person:<id>` (matching
+  known person names case-insensitively at a mention boundary, longest name first).
+- This round-trips cleanly (store → edit → store is stable) and saving an unchanged task
+  does not duplicate or corrupt mentions.
+
+This boundary conversion does not touch the dated-bullet logic (`• (DD.MM.YY)`,
+Enter/Shift+Enter), which operates on the live textarea text and is unchanged.
+
+**Edge cases / determinism:** An id that no longer resolves is kept as the raw
+`@person:<id>` token in edit mode (so the mention is preserved, not silently lost) rather
+than shown as `@unknown`. If two people ever shared a name (none do today), `@Name`
+serializes deterministically to the lowest person id. `@TASK-123` references are never
+converted (person names are non-numeric).
 
 ### What is preserved
 
@@ -49,8 +69,17 @@ regex only matches digits. Dated-bullet behaviour in Description/Notes is unchan
 ### Helpers
 
 - Frontend: `src/lib/mentions.ts` — `extractPersonMentionIds`, `extractTaskPersonMentionIds`,
-  `getMentionItems`, `buildPersonMention`.
+  `getMentionItems`, plus the display⇄storage trio `renderStoredMentionsForDisplay`,
+  `prepareMentionsForEditing`, `serializeMentionsForStorage`.
 - Worker: `worker/src/email.ts` mirrors the extraction (separate package/build).
+
+### Overdue indicator (related UI)
+
+When a task is expanded or edited, an **"Overdue by X day(s)"** line appears under Due
+Date (small red text). It uses local date-only comparison (`overdueDays`/`formatOverdue`
+in `src/lib/utils.ts`) and is shown only when the due date is strictly before today; it is
+hidden for today/future dates, missing dates, `done` tasks, and tasks with a `closed_date`.
+Display-only — it mutates no data.
 
 ---
 
@@ -87,23 +116,23 @@ Brevo, and raw SMTP are intentionally **not** implemented.
 
 ### Configuration (Worker env)
 
-| Variable | Type | Default | Purpose |
-|----------|------|---------|---------|
-| `EMAIL_ENABLED` | var | `"false"` | Must be exactly `"true"` to send. Anything else = disabled. |
-| `EMAIL_FROM` | var | `""` | Verified Resend sender address (e.g. `tasks@yourdomain.com`). |
-| `RESEND_API_KEY` | **secret** | _(unset)_ | Resend API key. Set via `wrangler secret put` — **never** committed. |
+| Variable | Type | Production value | Purpose |
+|----------|------|------------------|---------|
+| `EMAIL_ENABLED` | var | `"true"` | Must be exactly `"true"` to send. Anything else = disabled. |
+| `EMAIL_FROM` | var | `Task Manager <notifications@task-notification.xyz>` | Verified Resend sender. |
+| `EMAIL_REPLY_TO` | var | `sw@igintech.com` | Optional Reply-To header (added to the Resend payload when set; sending works without it). |
+| `RESEND_API_KEY` | **secret** | _(stored in Cloudflare)_ | Resend API key. Set via `wrangler secret put` — **never** committed. |
 
-`EMAIL_ENABLED` and `EMAIL_FROM` live in `worker/wrangler.toml` (`[vars]` and
-`[env.production.vars]`) as safe non-secret defaults. `RESEND_API_KEY` is a secret and is
-**not** stored in the repo.
+`EMAIL_ENABLED`, `EMAIL_FROM`, and `EMAIL_REPLY_TO` live in `worker/wrangler.toml`
+(`[env.production.vars]`). `RESEND_API_KEY` is a secret and is **not** stored in the repo.
+The **staging** Worker keeps `EMAIL_ENABLED="false"` (no real sends from staging).
 
-### Default behaviour: DISABLED
+### Behaviour when disabled
 
-Out of the box `EMAIL_ENABLED="false"`, so:
+If `EMAIL_ENABLED` is anything other than `"true"` (e.g. staging):
 
 - Person mentions still work.
-- The Worker email code exists and the notification logic is ready.
-- **No Resend call is ever attempted.** The Worker logs a safe skip line:
+- **No Resend call is attempted.** The Worker logs a safe skip line:
   `[email] skipped (EMAIL_ENABLED is not "true"): task created`.
 
 ### Failure behaviour (task ops always succeed)
@@ -152,12 +181,20 @@ Open task:
 https://task-management-system-3nm.pages.dev
 ```
 
+When `EMAIL_REPLY_TO` is set, a `reply_to` header (e.g. `sw@igintech.com`) is added so
+recipients' replies route to the team inbox rather than the no-reply sender.
+
 ---
 
 ## 3. People email addresses (`people.email`)
 
 `people.email` is an **optional** `TEXT` column. The app works correctly when it is `NULL`
 (that person simply receives no email). People with no email are skipped silently.
+
+**Configured in production (2026-06-18):** all five people (Amit, Elad, Tamir, Guy, Matan)
+have igintech.com addresses set. These were applied with `UPDATE people SET email = … WHERE
+name = …` (one row each, by name), **not** via data import. The literal addresses are kept
+out of the repo (set directly in D1).
 
 ### Adding email addresses
 
@@ -191,29 +228,34 @@ npx wrangler d1 execute task-management-production --remote \
 
 ---
 
-## 4. Enabling real email later (user setup checklist)
+## 4. Production activation (DONE) & how it was set up
 
-Real email sending is **off** until **all** of these are done:
+Email is **active in production**. The setup that was completed (2026-06-18):
 
-1. Create a [Resend](https://resend.com) account.
-2. Verify a sender/domain in Resend.
-3. Store the key as a Worker secret:
+1. Resend account created; domain **`task-notification.xyz`** added and **Verified**
+   (DNS records in Spaceship).
+2. `RESEND_API_KEY` stored as a Worker secret:
    ```bash
    cd worker
-   npx wrangler secret put RESEND_API_KEY --env production
+   npx wrangler secret put RESEND_API_KEY --env production   # value never printed/committed
    ```
-4. Set `EMAIL_FROM` to the verified sender (edit `[env.production.vars]` in
-   `worker/wrangler.toml`, or set it as a secret/var).
-5. Set `EMAIL_ENABLED="true"` (same place) and redeploy the production Worker.
-6. Add email addresses to the relevant people (section 3).
+3. `worker/wrangler.toml` `[env.production.vars]`:
+   ```toml
+   EMAIL_ENABLED  = "true"
+   EMAIL_FROM     = "Task Manager <notifications@task-notification.xyz>"
+   EMAIL_REPLY_TO = "sw@igintech.com"
+   ```
+4. People emails set in D1 production (section 3).
+5. Production Worker redeployed (auto on merge to `main`, `worker/**` changed).
 
 ### Testing safely
 
-- **Disabled (default):** create/update tasks and confirm the Worker logs
+- **Staging (disabled):** create/update tasks and confirm the Worker logs
   `[email] skipped (...)` and **no Resend request** is made (`wrangler tail`).
-- **Enabled, staging first:** enable on the staging Worker with a verified sender and a
-  test recipient before touching production. Watch `wrangler tail` for
-  `[email] sent assignment notification …`.
+- **Production smoke test:** create one obvious task (e.g. *"Email notification smoke test
+  - DELETE ME"*) assigned to a person with an email, watch `wrangler tail` for
+  `[email] sent assignment notification …`, confirm in Resend → Logs, then **archive** the
+  task. Send at most one test email; do not mention all people.
 
 ---
 

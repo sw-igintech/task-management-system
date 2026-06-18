@@ -86,12 +86,14 @@ broad production exposure. Documented, not blocking the candidate build.
 
 ## 7. Person mentions & email notifications
 
-The person-mention feature is live. Email notifications (Resend) are **scaffolded but
-DISABLED by default** (`EMAIL_ENABLED=false`) — no email is sent until Resend is configured
-and explicitly enabled. Task create/update always succeeds regardless of email state.
+The person-mention feature is live (shown/edited as friendly `@Name`; stored as
+`@person:<id>`). Email notifications (Resend) are **ENABLED in production** (2026-06-18):
+`EMAIL_ENABLED="true"`, sender `Task Manager <notifications@task-notification.xyz>`,
+Reply-To `sw@igintech.com`, domain `task-notification.xyz` Verified, `RESEND_API_KEY` stored
+as a Worker secret, and all five people have igintech.com emails in D1. Task create/update
+always succeeds regardless of email state (best-effort, detached send).
 
-- **Prerequisite before merge/deploy:** D1 production must have the `people.email` column
-  (run **D1 Apply Migrations** → `production`, or confirm via `PRAGMA table_info(people)`).
-- Enabling real email later requires Resend account + verified sender + `RESEND_API_KEY`
-  secret + `EMAIL_FROM` + `EMAIL_ENABLED="true"` + people email addresses. Full steps:
-  [`email-notifications.md`](email-notifications.md).
+- D1 production has the `people.email` column and populated addresses.
+- Staging Worker stays `EMAIL_ENABLED="false"` (no real sends from staging).
+- An "Overdue by X days" indicator shows under Due Date on expanded/edited tasks.
+- Full details: [`email-notifications.md`](email-notifications.md).
