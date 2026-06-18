@@ -1,0 +1,104 @@
+name: D1 Apply Migrations
+
+# Applies NON-DESTRUCTIVE D1 schema migrations from d1/migrations/*.sql to a chosen
+# environment (staging or production). Manual (workflow_dispatch) ONLY — it never runs
+# on push.
+#
+# This workflow:
+#   * does NOT import data
+#   * does NOT delete data
+#   * does NOT run automatically
+#   * only applies additive schema changes (e.g. ALTER TABLE ... ADD COLUMN)
+#
+# SQLite/D1 ADD COLUMN has no IF NOT EXISTS, so re-running a migration whose column
+# already exists fails with "duplicate column name". That specific error is treated
+# as success (the column is already present); any other failure stops the run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target D1 environment
+        type: choice
+        required: true
+        default: staging
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+# Never let two migration runs race on the same DB.
+concurrency:
+  group: d1-apply-migrations-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply D1 migrations (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve target D1 database name
+        id: target
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "d1_name=task-management-production" >> "$GITHUB_OUTPUT"
+          else
+            echo "d1_name=task-management-staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show D1 database info (id is not a secret)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 info "${{ steps.target.outputs.d1_name }}" || true
+
+      - name: Apply migrations (duplicate-column errors tolerated)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_NAME: ${{ steps.target.outputs.d1_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(d1/migrations/*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No migration files found in d1/migrations/ — nothing to do."
+            exit 0
+          fi
+          for f in $(printf '%s\n' "${files[@]}" | sort); do
+            echo "::group::Applying $f"
+            # Capture output so an already-applied ADD COLUMN ('duplicate column name')
+            # is reported as a safe no-op instead of failing the whole run.
+            if out=$(npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --file="$f" 2>&1); then
+              echo "$out"
+              echo "Applied OK: $f"
+            else
+              echo "$out"
+              if echo "$out" | grep -qi "duplicate column name"; then
+                echo "Already applied (duplicate column) — treating as success: $f"
+              else
+                echo "Migration failed: $f"
+                exit 1
+              fi
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Verify people.email column exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_NAME: ${{ steps.target.outputs.d1_name }}
+        run: |
+          echo "## people columns (expect an 'email' row)"
+          npx --yes wrangler@3 d1 execute "$D1_NAME" --remote --command "PRAGMA table_info(people);"

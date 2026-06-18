@@ -202,6 +202,7 @@ export function TaskRow({
             ) : (
               <TaskExpandedView
                 task={task}
+                people={people}
                 getTaskByNumber={getTaskByNumber}
                 onTaskReference={onTaskReference}
               />

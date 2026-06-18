@@ -53,6 +53,30 @@ validation, then auth/access-control decisions before any production cutover.
 - Note: D1 does not enforce foreign keys by default; the FK clauses are declarative. The
   import disables enforcement during load regardless.
 
+### Schema migrations (additive, non-destructive)
+
+Incremental schema changes live in **`d1/migrations/*.sql`** and are applied **separately
+from data import** by `.github/workflows/d1-apply-migrations.yml` (**`workflow_dispatch`
+only**, input `environment: staging | production`). This workflow **never imports or
+deletes data** — it only applies additive DDL.
+
+- `2026-06-18_add_people_email.sql` — adds the optional `people.email` column backing the
+  (default-disabled) email-notification feature. `people.email` is also already declared in
+  `d1/schema.sql`, so any DB created from the current schema already has it.
+- SQLite `ALTER TABLE ... ADD COLUMN` has **no `IF NOT EXISTS`**, so re-applying an
+  already-present column fails with *"duplicate column name"*. The workflow treats that
+  exact error as a **safe no-op** (and fails on any other error), then verifies via
+  `PRAGMA table_info(people)`.
+- Manual equivalent:
+  ```bash
+  npx wrangler d1 execute task-management-production --remote \
+    --file=d1/migrations/2026-06-18_add_people_email.sql   # 'duplicate column name' = already applied, safe
+  ```
+- **Apply the `people.email` migration to production (and staging if maintained) before
+  deploying/merging code that uses it.** The app degrades gracefully when `people.email` is
+  `NULL` (that person just receives no email). See
+  [`email-notifications.md`](email-notifications.md).
+
 ## 5. Export / import flow
 
 1. **Export** — `node scripts/d1/export-worker-data.mjs`

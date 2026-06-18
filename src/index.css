@@ -103,6 +103,20 @@
     text-decoration: underline dotted;
   }
 
+  /* Person mentions (@person:<id> -> @Name) inside Notes/Description */
+  .person-mention {
+    display: inline;
+    color: #6d28d9;
+    font-weight: 600;
+    background-color: #f5f3ff;
+    border-radius: 0.25rem;
+    padding: 0 0.2rem;
+  }
+  .person-mention-unresolved {
+    color: #94a3b8;
+    font-style: italic;
+  }
+
   /* Brief highlight when jumping to a referenced task row */
   .task-row-highlight td {
     background-color: #fef9c3;

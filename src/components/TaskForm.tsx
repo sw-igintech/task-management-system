@@ -9,31 +9,20 @@ import { Select } from './ui/Select';
 import { Textarea } from './ui/Textarea';
 import { Button } from './ui/Button';
 import { MentionSuggestions } from './MentionSuggestions';
+import { getMentionItems, buildPersonMention, type MentionItem } from '../lib/mentions';
 import { STATUS_LABELS, PRIORITY_LABELS } from '../lib/utils';
-
-const MENTION_LIMIT = 8;
 
 // Detects an in-progress @-mention token ending at the caret. The @ must be at the
 // start of the field or after a separator (space/newline/( [ { : ,), so emails like
-// "name@example.com" never trigger it. Returns the token's start index, end index,
-// and the numeric query typed after @ (empty while just "@" or "@TASK-").
+// "name@example.com" never trigger it. The query (text typed after @) may be a task
+// number ("123", "task-12") OR the start of a person's name ("Mat"); a stored
+// "@person:<id>" token never re-triggers because its ":" breaks the [\w-] run.
+// Returns the token's start index, end index, and the raw query typed after @.
 function detectMentionToken(value: string, caret: number): { start: number; end: number; query: string } | null {
   const before = value.slice(0, caret);
-  const m = before.match(/(?<=^|[\s([{:,\n])@(?:task-)?(\d*)$/i);
+  const m = before.match(/(?<=^|[\s([{:,\n])@([\w-]*)$/);
   if (!m) return null;
   return { start: caret - m[0].length, end: caret, query: m[1] };
-}
-
-// Builds the suggestion list for a mention query from the loaded tasks. Only tasks
-// that have a task_number are eligible. Empty query → most-recent (highest) numbers.
-function getMentionSuggestions(tasks: Task[], query: string): Task[] {
-  const withNumber = tasks.filter(t => t.task_number != null);
-  const sorted = query === ''
-    ? [...withNumber].sort((a, b) => (b.task_number ?? 0) - (a.task_number ?? 0))
-    : withNumber
-        .filter(t => String(t.task_number).startsWith(query))
-        .sort((a, b) => (a.task_number ?? 0) - (b.task_number ?? 0));
-  return sorted.slice(0, MENTION_LIMIT);
 }
 
 const taskSchema = z.object({
@@ -176,12 +165,13 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   };
 
   // ── @-mention autocomplete for Notes/Description ──────────────────────────
-  // Editing helper only: it inserts plain "@<number>" text; nothing is stored as a
-  // rich object and the read-only renderer (TaskTextWithLinks) linkifies it later.
+  // Editing helper only. A task pick inserts plain "@TASK-<n>" text; a person pick
+  // inserts the stable "@person:<id>" token. Read-only views (TaskTextWithLinks)
+  // linkify task refs and render person tokens as @Name.
   const [mention, setMention] = useState<{ field: TraceField; start: number; end: number; query: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const suggestions = mention ? getMentionSuggestions(mentionTasks, mention.query) : [];
+  const items: MentionItem[] = mention ? getMentionItems(mentionTasks, people, mention.query) : [];
   const NAV_KEYS = ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'];
 
   // Re-evaluate whether the caret sits inside a mention token; open/close the popup.
@@ -195,17 +185,25 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     }
   };
 
-  // Replace the active mention token with a clean "@TASK-<number> " reference (the
-  // read-only renderer accepts @123, @TASK-123 and @task-123, so older @123 notes
-  // still link). The active textarea is the focused element (suggestion clicks use
-  // mousedown-preventDefault, so focus stays put) — avoids a React ref read in render.
-  const selectSuggestion = (taskToRef: Task) => {
+  // Replace the active mention token with the chosen reference. Tasks insert a clean
+  // "@TASK-<number> " (the read-only renderer accepts @123, @TASK-123 and @task-123, so
+  // older @123 notes still link). People insert the stable "@person:<id> " token. The
+  // active textarea is the focused element (suggestion clicks use mousedown-preventDefault,
+  // so focus stays put) — avoids a React ref read in render.
+  const selectSuggestion = (item: MentionItem) => {
     const el = document.activeElement;
-    if (!mention || taskToRef.task_number == null) return;
+    if (!mention) return;
     if (!(el instanceof HTMLTextAreaElement) || el.name !== mention.field) return;
+    let core: string;
+    if (item.kind === 'task') {
+      if (item.task.task_number == null) return;
+      core = `@TASK-${item.task.task_number}`;
+    } else {
+      core = buildPersonMention(item.person.id);
+    }
     const value = el.value;
     const rest = value.slice(mention.end);
-    const insert = `@TASK-${taskToRef.task_number}` + (rest.startsWith(' ') ? '' : ' ');
+    const insert = core + (rest.startsWith(' ') ? '' : ' ');
     const newValue = value.slice(0, mention.start) + insert + rest;
     setValue(mention.field, newValue, { shouldDirty: true, shouldTouch: true });
     const caret = mention.start + insert.length;
@@ -223,10 +221,10 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   //  4. Otherwise the first-printable-char trace-prefix logic runs.
   const handleTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
-    if (mention && mention.field === field && suggestions.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => (i + 1) % suggestions.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => (i - 1 + suggestions.length) % suggestions.length); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectSuggestion(suggestions[activeIndex]); return; }
+    if (mention && mention.field === field && items.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => (i + 1) % items.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => (i - 1 + items.length) % items.length); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectSuggestion(items[activeIndex]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setMention(null); return; }
     }
     if (
@@ -328,12 +326,12 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
           onBlur={e => { descReg.onBlur(e); setMention(m => (m?.field === 'description' ? null : m)); }}
-          placeholder="Task description / what needs to be done... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task)"
+          placeholder="Task description / what needs to be done... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task or mention a person)"
           rows={3}
         />
         {mention?.field === 'description' && (
           <MentionSuggestions
-            suggestions={suggestions}
+            items={items}
             activeIndex={activeIndex}
             onSelect={selectSuggestion}
             onHover={setActiveIndex}
@@ -351,12 +349,12 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
           onBlur={e => { notesReg.onBlur(e); setMention(m => (m?.field === 'notes' ? null : m)); }}
-          placeholder="Updates / comments / ongoing log... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task)"
+          placeholder="Updates / comments / ongoing log... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task or mention a person)"
           rows={4}
         />
         {mention?.field === 'notes' && (
           <MentionSuggestions
-            suggestions={suggestions}
+            items={items}
             activeIndex={activeIndex}
             onSelect={selectSuggestion}
             onHover={setActiveIndex}

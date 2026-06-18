@@ -7,8 +7,22 @@
 // SECURITY: write endpoints have NO app-level auth yet. This is acceptable for
 // staging/internal migration testing ONLY. Before any production exposure, auth/access
 // control must be added (or an explicit risk decision documented).
+//
+// EMAIL: task create/update can trigger Resend notifications, but only when
+// EMAIL_ENABLED === "true" AND Resend is configured. Default is DISABLED — see
+// email.ts / docs/email-notifications.md. Email sending NEVER affects whether a task
+// mutation succeeds (it runs detached via ctx.waitUntil and swallows its own errors).
 
-export interface Env {
+import {
+  type EmailEnv,
+  type PersonRow,
+  type TaskRow,
+  computeCreateRecipients,
+  computeUpdateRecipients,
+  dispatchEmails,
+} from './email';
+
+export interface Env extends EmailEnv {
   DB: D1Database;
 }
 
@@ -69,6 +83,41 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
 function mapTaskRow(row: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!row) return row;
   return { ...row, archived: row.archived === 1 || row.archived === true };
+}
+
+// ── Email notifications (best-effort, default-disabled) ──────────────────────
+// These helpers NEVER throw — they are run via ctx.waitUntil and must not affect the
+// task mutation's success. When EMAIL_ENABLED !== "true" they short-circuit (and skip
+// the people lookup) after logging a safe skip message.
+async function loadPeopleById(env: Env): Promise<Map<string, PersonRow>> {
+  const { results } = await env.DB.prepare('SELECT id, name, email FROM people').all<PersonRow>();
+  return new Map(results.map(p => [p.id, p]));
+}
+
+async function scheduleCreateNotifications(env: Env, task: TaskRow): Promise<void> {
+  try {
+    if (env.EMAIL_ENABLED !== 'true') {
+      console.log('[email] skipped (EMAIL_ENABLED is not "true"): task created');
+      return;
+    }
+    const peopleById = await loadPeopleById(env);
+    await dispatchEmails(env, computeCreateRecipients(task, peopleById), task);
+  } catch (err) {
+    console.warn('[email] create-notification error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: TaskRow): Promise<void> {
+  try {
+    if (env.EMAIL_ENABLED !== 'true') {
+      console.log('[email] skipped (EMAIL_ENABLED is not "true"): task updated');
+      return;
+    }
+    const peopleById = await loadPeopleById(env);
+    await dispatchEmails(env, computeUpdateRecipients(oldTask, newTask, peopleById), newTask);
+  } catch (err) {
+    console.warn('[email] update-notification error:', err instanceof Error ? err.message : String(err));
+  }
 }
 
 // ── Validation (unchanged contract) ─────────────────────────────────────────
@@ -164,7 +213,7 @@ async function createPerson(env: Env, body: Record<string, unknown>, origin: str
   return jsonResponse(row, 201, origin);
 }
 
-async function createTask(env: Env, body: Record<string, unknown>, origin: string | null): Promise<Response> {
+async function createTask(env: Env, body: Record<string, unknown>, origin: string | null, ctx: ExecutionContext): Promise<Response> {
   const p = buildTaskPayload(body, true);
   // Next task_number = max + 1. Racy under concurrency — fine for staging/internal use;
   // production would need a sequence/atomic counter.
@@ -198,13 +247,24 @@ async function createTask(env: Env, body: Record<string, unknown>, origin: strin
       now,
     )
     .first<Record<string, unknown>>();
+
+  // Notify (responsible assignment + mentions) detached from the response. Safe no-op
+  // when email is disabled; never affects the 201 just produced.
+  if (row) ctx.waitUntil(scheduleCreateNotifications(env, row as TaskRow));
+
   return jsonResponse(mapTaskRow(row), 201, origin);
 }
 
-async function patchTask(env: Env, id: string, payload: Record<string, unknown>, origin: string | null): Promise<Response> {
+async function patchTask(env: Env, id: string, payload: Record<string, unknown>, origin: string | null, ctx: ExecutionContext): Promise<Response> {
   if (Object.keys(payload).length === 0) {
     return errorResponse('No editable fields supplied', 400, origin);
   }
+  // Snapshot the pre-update row ONLY when email is on, so we can diff responsible/mentions.
+  // When email is disabled (the default) this read is skipped entirely.
+  const emailEnabled = env.EMAIL_ENABLED === 'true';
+  const oldRow = emailEnabled
+    ? await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first<Record<string, unknown>>()
+    : null;
   // Column names come only from the validated TASK_FIELDS whitelist → safe to interpolate.
   const sets: string[] = [];
   const binds: unknown[] = [];
@@ -226,12 +286,19 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
     .bind(...binds)
     .first<Record<string, unknown>>();
   if (!row) return errorResponse('Task not found', 404, origin);
+
+  // Notify only the NEW responsible person (if changed) and NEWLY mentioned people.
+  // Detached; safe no-op when email is disabled.
+  if (oldRow) {
+    ctx.waitUntil(scheduleUpdateNotifications(env, oldRow as TaskRow, row as TaskRow));
+  }
+
   return jsonResponse(mapTaskRow(row), 200, origin);
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = request.headers.get('Origin');
     const { pathname, searchParams } = new URL(request.url);
     const method = request.method;
@@ -271,7 +338,7 @@ export default {
             const activeOnly = ia === 'false' || ia === '0';
             return await listTasks(env, activeOnly, origin);
           }
-          if (method === 'POST') return await createTask(env, await parseJsonBody(request), origin);
+          if (method === 'POST') return await createTask(env, await parseJsonBody(request), origin, ctx);
           return errorResponse('Method Not Allowed', 405, origin);
         }
         const id = parts[2];
@@ -279,14 +346,14 @@ export default {
         if (parts.length === 3) {
           if (method === 'PATCH') {
             const payload = buildTaskPayload(await parseJsonBody(request), false);
-            return await patchTask(env, id, payload, origin);
+            return await patchTask(env, id, payload, origin, ctx);
           }
           return errorResponse('Method Not Allowed', 405, origin);
         }
         // /api/tasks/:id/archive | /api/tasks/:id/restore
         if (parts.length === 4 && method === 'POST') {
-          if (parts[3] === 'archive') return await patchTask(env, id, { archived: true }, origin);
-          if (parts[3] === 'restore') return await patchTask(env, id, { archived: false }, origin);
+          if (parts[3] === 'archive') return await patchTask(env, id, { archived: true }, origin, ctx);
+          if (parts[3] === 'restore') return await patchTask(env, id, { archived: false }, origin, ctx);
         }
         return errorResponse('Not Found', 404, origin);
       }

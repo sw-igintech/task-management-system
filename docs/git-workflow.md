@@ -25,6 +25,10 @@ Pushing to **`main`** automatically deploys the official **Cloudflare** producti
   Worker `task-management-api-production` (D1 production).
 - **D1 Production Import is manual (`workflow_dispatch`) only** — a code push must never
   overwrite D1 production data.
+- **D1 Apply Migrations is manual (`workflow_dispatch`) only** — additive schema changes
+  (`d1/migrations/*.sql`); never runs on push, never imports/deletes data. When a change
+  adds a column the code relies on, **apply the migration to D1 production before merging**
+  the code to `main` (merging auto-deploys the production Worker + Pages).
 - Runtime task/person edits go **Browser → Worker → D1 production** (not via git).
 - Vercel + Supabase remain live as **rollback** (≥ 1–2 weeks); do not delete yet.
 
