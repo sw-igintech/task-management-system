@@ -9,6 +9,7 @@ import { Select } from './ui/Select';
 import { Textarea } from './ui/Textarea';
 import { Button } from './ui/Button';
 import { MentionSuggestions } from './MentionSuggestions';
+import { MentionPreview } from './MentionPreview';
 import {
   getMentionItems,
   prepareMentionsForEditing,
@@ -365,6 +366,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onHover={setActiveIndex}
           />
         )}
+        <MentionPreview text={watch('description') ?? ''} people={people} />
       </div>
 
       <div className="relative">
@@ -388,6 +390,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onHover={setActiveIndex}
           />
         )}
+        <MentionPreview text={watch('notes') ?? ''} people={people} />
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

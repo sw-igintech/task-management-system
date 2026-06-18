@@ -22,6 +22,28 @@ export function formatTaskKey(taskNumber: number | null | undefined): string {
   return taskNumber == null ? '—' : `TASK-${taskNumber}`;
 }
 
+// Public production app URL (used for deep links in emails and for in-app URL sync).
+export const APP_URL = 'https://task-management-system-3nm.pages.dev';
+
+// Deep-link query for a task: "?task=TASK-<number>". The Worker email builder mirrors
+// this exact scheme. Returns "" when the task has no number.
+export function buildTaskQuery(taskNumber: number | null | undefined): string {
+  return taskNumber == null ? '' : `?task=TASK-${taskNumber}`;
+}
+
+// Absolute deep link that opens the app directly on a specific task (already expanded).
+export function buildTaskUrl(taskNumber: number | null | undefined): string {
+  return `${APP_URL}${buildTaskQuery(taskNumber)}`;
+}
+
+// Parses a "?task=" deep-link param into a task number. Accepts "TASK-135", "task-135",
+// "#135" and bare "135". Returns null when absent/unparseable.
+export function parseTaskParam(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const m = value.trim().match(/^#?(?:task-)?(\d+)$/i);
+  return m ? Number(m[1]) : null;
+}
+
 // Returns true when a search query refers to this task's number. Accepts
 // "123", "TASK-123", "task-123" and "#123" (exact number match).
 export function matchesTaskNumber(taskNumber: number | null | undefined, query: string): boolean {

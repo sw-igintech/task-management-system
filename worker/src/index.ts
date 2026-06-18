@@ -94,6 +94,13 @@ async function loadPeopleById(env: Env): Promise<Map<string, PersonRow>> {
   return new Map(results.map(p => [p.id, p]));
 }
 
+// Best-available actor name for a task: the opener/creator (there is no current-user
+// concept on this API). Returns null when unresolved → emails fall back to "מישהו".
+function actorNameFor(task: TaskRow, peopleById: Map<string, PersonRow>): string | null {
+  const id = task.opened_by_person_id;
+  return id ? (peopleById.get(id)?.name ?? null) : null;
+}
+
 async function scheduleCreateNotifications(env: Env, task: TaskRow): Promise<void> {
   try {
     if (env.EMAIL_ENABLED !== 'true') {
@@ -101,7 +108,7 @@ async function scheduleCreateNotifications(env: Env, task: TaskRow): Promise<voi
       return;
     }
     const peopleById = await loadPeopleById(env);
-    await dispatchEmails(env, computeCreateRecipients(task, peopleById), task);
+    await dispatchEmails(env, computeCreateRecipients(task, peopleById), task, actorNameFor(task, peopleById));
   } catch (err) {
     console.warn('[email] create-notification error:', err instanceof Error ? err.message : String(err));
   }
@@ -114,7 +121,7 @@ async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: 
       return;
     }
     const peopleById = await loadPeopleById(env);
-    await dispatchEmails(env, computeUpdateRecipients(oldTask, newTask, peopleById), newTask);
+    await dispatchEmails(env, computeUpdateRecipients(oldTask, newTask, peopleById), newTask, actorNameFor(newTask, peopleById));
   } catch (err) {
     console.warn('[email] update-notification error:', err instanceof Error ? err.message : String(err));
   }

@@ -14,6 +14,13 @@
 const APP_URL = 'https://task-management-system-3nm.pages.dev';
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
+// Deep link that opens the app directly on a specific task (already expanded).
+// Scheme: `${APP_URL}?task=TASK-<number>` — mirrors src/lib/utils.ts buildTaskUrl.
+// Falls back to the bare app URL when the task has no number.
+function buildTaskUrl(task: TaskRow): string {
+  return task.task_number == null ? APP_URL : `${APP_URL}?task=TASK-${task.task_number}`;
+}
+
 // Env fields this module reads. Worker's Env interface extends this. All optional:
 // when email is disabled the Worker deploys and runs without any of them set.
 export interface EmailEnv {
@@ -40,6 +47,9 @@ export interface TaskRow {
   priority?: number | null;
   due_date?: string | null;
   responsible_person_id?: string | null;
+  // Who opened/created the task. Resolved to a name and shown as the actor in emails
+  // ("<opener> פתח עבורך…" / "<opener> הזכיר אותך…").
+  opened_by_person_id?: string | null;
 }
 
 type RecipientKind = 'assignment' | 'mention';
@@ -121,50 +131,56 @@ export function computeUpdateRecipients(
   return [...map.values()];
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  not_started: 'Not Started',
-  in_progress: 'In Progress',
-  on_hold: 'On Hold',
-  need_to_review: 'Need to Review',
-  done: 'Done',
+// Hebrew status labels for email bodies.
+const STATUS_LABELS_HE: Record<string, string> = {
+  not_started: 'לא התחיל',
+  in_progress: 'בתהליך',
+  on_hold: 'בהמתנה',
+  need_to_review: 'לבדיקה',
+  done: 'הושלם',
 };
 
 function taskKey(task: TaskRow): string {
   return task.task_number == null ? 'TASK' : `TASK-${task.task_number}`;
 }
 
-function buildEmail(recipient: Recipient, task: TaskRow): { subject: string; text: string } {
+// Builds the Hebrew email for a recipient. `actorName` is the opener/creator name (the
+// best-available actor — there is no current-user concept). Falls back to "מישהו".
+// Both emails include a deep link that opens the specific task already expanded.
+function buildEmail(recipient: Recipient, task: TaskRow, actorName: string | null): { subject: string; text: string } {
   const key = taskKey(task);
-  const title = task.title ?? '(untitled)';
+  const title = task.title ?? '(ללא כותרת)';
+  const url = buildTaskUrl(task);
+  const actor = actorName && actorName.trim() ? actorName.trim() : 'מישהו';
+
   if (recipient.kind === 'assignment') {
-    const status = task.status ? (STATUS_LABELS[task.status] ?? task.status) : 'Not Started';
-    const due = task.due_date ? task.due_date : 'No due date';
+    const status = task.status ? (STATUS_LABELS_HE[task.status] ?? task.status) : STATUS_LABELS_HE.not_started;
+    const due = task.due_date ? task.due_date : 'ללא תאריך יעד';
     return {
-      subject: `New task assigned: ${key} — ${title}`,
+      subject: `משימה חדשה הוקצתה אליך: ${key} - ${title}`,
       text:
-        `Hello ${recipient.name},\n\n` +
-        `A new task was assigned to you.\n\n` +
-        `Task: ${key} — ${title}\n` +
-        `Status: ${status}\n` +
-        `Priority: ${task.priority ?? '—'}\n` +
-        `Due date: ${due}\n\n` +
-        `Open task:\n${APP_URL}\n`,
+        `היי ${recipient.name},\n\n` +
+        `${actor} פתח עבורך משימה חדשה.\n\n` +
+        `משימה: ${key} - ${title}\n` +
+        `סטטוס: ${status}\n` +
+        `עדיפות: ${task.priority ?? '—'}\n` +
+        `תאריך יעד: ${due}\n\n` +
+        `לפתיחת המשימה:\n${url}\n`,
     };
   }
   return {
-    subject: `You were mentioned in ${key} — ${title}`,
+    subject: `הוזכרת במשימה ${key} - ${title}`,
     text:
-      `Hello ${recipient.name},\n\n` +
-      `You were mentioned in a task.\n\n` +
-      `Task: ${key} — ${title}\n\n` +
-      `Open task:\n${APP_URL}\n`,
+      `היי ${recipient.name},\n\n` +
+      `${actor} הזכיר אותך במשימה ${key} - ${title}.\n\n` +
+      `לפתיחת המשימה:\n${url}\n`,
   };
 }
 
 // Sends one email via Resend. Returns true on success. Never throws and never logs the
 // API key. Caller guarantees env.RESEND_API_KEY / env.EMAIL_FROM are present.
-async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow): Promise<boolean> {
-  const { subject, text } = buildEmail(recipient, task);
+async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow, actorName: string | null): Promise<boolean> {
+  const { subject, text } = buildEmail(recipient, task, actorName);
   const payload: Record<string, unknown> = { from: env.EMAIL_FROM, to: [recipient.email], subject, text };
   // Optional Reply-To: include only when configured; sending works fine without it.
   const replyTo = env.EMAIL_REPLY_TO?.trim();
@@ -196,7 +212,12 @@ async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow)
 // Best-effort send of a batch of notifications. Honours EMAIL_ENABLED and config; on
 // any disabled/misconfigured/failure path it logs a safe message and resolves without
 // throwing. Intended to run inside ctx.waitUntil(...).
-export async function dispatchEmails(env: EmailEnv, recipients: Recipient[], task: TaskRow): Promise<void> {
+export async function dispatchEmails(
+  env: EmailEnv,
+  recipients: Recipient[],
+  task: TaskRow,
+  actorName: string | null,
+): Promise<void> {
   if (recipients.length === 0) return;
 
   if (env.EMAIL_ENABLED !== 'true') {
@@ -210,6 +231,6 @@ export async function dispatchEmails(env: EmailEnv, recipients: Recipient[], tas
 
   // Sequential is fine for the tiny recipient counts here; one failure never aborts others.
   for (const recipient of recipients) {
-    await sendViaResend(env, recipient, task);
+    await sendViaResend(env, recipient, task, actorName);
   }
 }
