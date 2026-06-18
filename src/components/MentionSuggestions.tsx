@@ -60,11 +60,11 @@ export function MentionSuggestions({ items, activeIndex, onSelect, onHover }: Me
                     </>
                   ) : (
                     <>
-                      <span className="flex shrink-0 items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-xs font-semibold text-violet-700">
+                      <span className="flex shrink-0 items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-semibold text-blue-700">
                         <AtSign size={11} />
                         Person
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-gray-700">{item.person.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-blue-600">@{item.person.name}</span>
                     </>
                   )}
                 </button>

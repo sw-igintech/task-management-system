@@ -164,8 +164,11 @@ Worker env:
 | `RESEND_API_KEY` | **secret** | _(stored in Cloudflare)_ | `wrangler secret put RESEND_API_KEY --env production` — never committed/printed. |
 
 The vars are declared in `worker/wrangler.toml` `[env.production.vars]`. Code lives in
-`worker/src/email.ts`. Full behaviour, recipient de-duplication, content, and free-tier
-limits: [`docs/email-notifications.md`](email-notifications.md).
+`worker/src/email.ts`. Emails are in **Hebrew**: the assignment email names who opened the
+task (`opened_by_person_id` → name), the mention email names the actor (also the opener —
+no current-user concept), and both include a deep link
+`…?task=TASK-<number>` that opens the task already expanded. Full behaviour, recipient
+de-duplication, content, and free-tier limits: [`docs/email-notifications.md`](email-notifications.md).
 
 ## Deployment
 

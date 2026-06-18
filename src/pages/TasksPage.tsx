@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Plus, Menu, X } from 'lucide-react';
 import type { Task } from '../types';
 import { useTasks } from '../hooks/useTasks';
@@ -9,7 +9,7 @@ import { TaskForm, type TaskFormData } from '../components/TaskForm';
 import { PeopleManager } from '../components/PeopleManager';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
-import { isOverdue, isDueThisWeek } from '../lib/utils';
+import { isOverdue, isDueThisWeek, buildTaskQuery, parseTaskParam } from '../lib/utils';
 
 interface TasksPageProps {
   hookData: ReturnType<typeof useTasks>;
@@ -47,8 +47,9 @@ export function TasksPage({ hookData }: TasksPageProps) {
 
   const getTaskByNumber = useCallback((n: number) => taskByNumber.get(n), [taskByNumber]);
 
-  // Clicking a @reference: reveal the target (resetting filters that could hide it,
-  // matching its archived state) and ask the table to expand + scroll to it.
+  // Clicking a @reference (or following a ?task= deep link): reveal the target (resetting
+  // filters that could hide it, matching its archived state), ask the table to expand +
+  // scroll to it, and sync the URL to ?task=TASK-<n> so the view is shareable.
   const handleTaskReference = useCallback((n: number) => {
     const target = taskByNumber.get(n);
     if (!target) {
@@ -66,7 +67,25 @@ export function TasksPage({ hookData }: TasksPageProps) {
       show_archived: target.archived,
     }));
     tableRef.current?.openTask(target.id);
+    // Keep the address bar in sync without a router (replace, so Back isn't polluted).
+    if (target.task_number != null) {
+      window.history.replaceState(null, '', `${window.location.pathname}${buildTaskQuery(target.task_number)}`);
+    }
   }, [taskByNumber, setFilters]);
+
+  // Deep link: on first load (once tasks are available), if the URL carries
+  // ?task=TASK-<n>, open that task expanded. Deferred to a timer so the state updates
+  // run outside the effect body (no synchronous setState-in-effect). Runs once.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || tasks.length === 0) return;
+    const n = parseTaskParam(new URLSearchParams(window.location.search).get('task'));
+    if (n == null) { deepLinkHandled.current = true; return; }
+    if (!taskByNumber.has(n)) return; // task list may still be loading the target
+    deepLinkHandled.current = true;
+    const id = window.setTimeout(() => handleTaskReference(n), 0);
+    return () => window.clearTimeout(id);
+  }, [tasks, taskByNumber, handleTaskReference]);
 
   const activeTasks = tasks.filter(t => !t.archived);
   const taskCounts = {

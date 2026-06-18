@@ -69,8 +69,9 @@ regex only matches digits. Dated-bullet behaviour in Description/Notes is unchan
 ### Helpers
 
 - Frontend: `src/lib/mentions.ts` — `extractPersonMentionIds`, `extractTaskPersonMentionIds`,
-  `getMentionItems`, plus the display⇄storage trio `renderStoredMentionsForDisplay`,
-  `prepareMentionsForEditing`, `serializeMentionsForStorage`.
+  `getMentionItems`, the display⇄storage trio `renderStoredMentionsForDisplay`,
+  `prepareMentionsForEditing`, `serializeMentionsForStorage`, and `tokenizeMentions`
+  (segments for the blue edit-mode preview).
 - Worker: `worker/src/email.ts` mirrors the extraction (separate package/build).
 
 ### Overdue indicator (related UI)
@@ -89,10 +90,13 @@ Display-only — it mutates no data.
 
 | Event | Recipient | Email |
 |-------|-----------|-------|
-| Task created with a responsible person | that person (if they have an email) | "New task assigned…" |
-| Task created mentioning people | each mentioned person (if they have an email) | "You were mentioned…" |
-| Task updated, responsible person **changed** | the **new** responsible person | "New task assigned…" |
-| Task updated with **new** mentions | only the **newly** mentioned people | "You were mentioned…" |
+| Task created with a responsible person | that person (if they have an email) | assignment (incl. opener name) |
+| Task created mentioning people | each mentioned person (if they have an email) | mention (incl. actor name) |
+| Task updated, responsible person **changed** | the **new** responsible person | assignment |
+| Task updated with **new** mentions | only the **newly** mentioned people | mention |
+
+Archive/restore send **no** email (no responsible/mention change). Mention emails are
+**live**: anyone mentioned in Description or Notes with an email on file is notified.
 
 ### De-duplication
 
@@ -146,43 +150,73 @@ never waits on it. **A task create/update always succeeds**, regardless of email
 - Resend API errors → the task mutation is **not** rolled back; a safe failure is logged
   (HTTP status + short excerpt, never the API key); task op still succeeds.
 
-### Email content
+### Email content (Hebrew)
 
-Plain text, concise (no full description/notes). `<number>` = task number, etc.
+Plain text, concise (no full description/notes). Each email includes a **deep link** that
+opens the specific task already expanded (see *Deep links* below). `<actor>` is the
+opener/creator name (best-available actor — there is no current-user concept; falls back
+to `מישהו`). `<number>` = task number.
 
-**New assignment**
+**New assignment** — includes who opened the task:
 ```
-Subject: New task assigned: TASK-<number> — <title>
+Subject: משימה חדשה הוקצתה אליך: TASK-<number> - <title>
 
-Hello <person name>,
+היי <recipient name>,
 
-A new task was assigned to you.
+<actor> פתח עבורך משימה חדשה.
 
-Task: TASK-<number> — <title>
-Status: <status>
-Priority: <priority>
-Due date: <due_date or "No due date">
+משימה: TASK-<number> - <title>
+סטטוס: <status (Hebrew)>
+עדיפות: <priority>
+תאריך יעד: <due_date or "ללא תאריך יעד">
 
-Open task:
-https://task-management-system-3nm.pages.dev
-```
-
-**Mention**
-```
-Subject: You were mentioned in TASK-<number> — <title>
-
-Hello <person name>,
-
-You were mentioned in a task.
-
-Task: TASK-<number> — <title>
-
-Open task:
-https://task-management-system-3nm.pages.dev
+לפתיחת המשימה:
+https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```
 
-When `EMAIL_REPLY_TO` is set, a `reply_to` header (e.g. `sw@igintech.com`) is added so
-recipients' replies route to the team inbox rather than the no-reply sender.
+**Mention** — e.g. "היי מתן, עמית הזכיר אותך במשימה TASK-135 - שיפור הקוד בתוכנה.":
+```
+Subject: הוזכרת במשימה TASK-<number> - <title>
+
+היי <recipient name>,
+
+<actor> הזכיר אותך במשימה TASK-<number> - <title>.
+
+לפתיחת המשימה:
+https://task-management-system-3nm.pages.dev?task=TASK-<number>
+```
+
+Hebrew status labels: לא התחיל / בתהליך / בהמתנה / לבדיקה / הושלם.
+
+**Actor source / limitation:** for both create and update the actor is resolved from the
+task's `opened_by_person_id` (the API has no authenticated current-user). So an update made
+by a different person still shows the original opener as the actor. Documented, by design.
+
+When `EMAIL_REPLY_TO` is set, a `reply_to` header (`sw@igintech.com`) is added so replies
+route to the team inbox rather than the no-reply sender.
+
+### Deep links (open a specific task)
+
+Emails link to **`https://task-management-system-3nm.pages.dev?task=TASK-<number>`**. On
+load the app reads `?task=`, finds the task by number, clears filters that would hide it
+(matching its archived state), and expands + scrolls to it on the **Tasks** tab. Clicking a
+`@TASK` reference inside the app also syncs the URL to the same `?task=` form (via
+`history.replaceState`, no router). Helpers: `buildTaskUrl` / `buildTaskQuery` /
+`parseTaskParam` in `src/lib/utils.ts`; the Worker email builder mirrors the exact scheme.
+Limitation: deep links open on the Tasks tab; if the task number doesn't exist nothing
+opens (logged to console).
+
+### Blue highlighting of mentions & task references
+
+- **Read-only (expanded task view):** person mentions `@Name` and task references
+  `@TASK-135` render in blue (`TaskTextWithLinks`); task references stay clickable, person
+  mentions are blue text (not clickable in this step).
+- **Mention dropdown:** both task and person suggestions use blue labels.
+- **Edit mode:** a native `<textarea>` cannot colour only part of its own text, so the raw
+  textarea stays plain (preserving typing, bullets, Enter/Shift+Enter, autocomplete, and
+  caret behaviour). A small read-only **Preview** is shown beneath Description/Notes that
+  renders the same text with mentions/task refs in blue (`MentionPreview` +
+  `tokenizeMentions`). This is the documented, low-risk alternative to a textarea overlay.
 
 ---
 
