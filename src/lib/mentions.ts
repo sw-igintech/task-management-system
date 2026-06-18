@@ -107,50 +107,6 @@ export function serializeMentionsForStorage(text: string | null | undefined, peo
   });
 }
 
-// ── Tokenizer for highlighting (edit-mode preview) ───────────────────────────
-// Splits text into typed segments so a preview can colour mentions/task refs blue.
-// Handles the EDIT-form text (which contains friendly "@Name") as well as stored
-// "@person:<id>" tokens; task references ("@TASK-135", "@task-135", "@135") are typed
-// as 'task'. Person names are non-numeric, so they never collide with task numbers.
-export type MentionSegment = { text: string; type: 'plain' | 'person' | 'task' };
-
-export function tokenizeMentions(text: string, people: Person[]): MentionSegment[] {
-  if (!text) return [];
-  const byId = new Map(people.map(p => [p.id, p.name]));
-  // Longest names first so e.g. "Anna Lee" wins over "Anna".
-  const nameAlt = [...people]
-    .map(p => p.name)
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRegExp)
-    .join('|');
-  // person:<id>  |  @Name (known)  |  task ref (@TASK-n / @task-n / @n)
-  const namePart = nameAlt ? `(${nameAlt})(?![A-Za-z0-9_])|` : '';
-  const re = new RegExp(
-    `(?<![A-Za-z0-9_])@(?:person:([A-Za-z0-9_-]+)|${namePart}(?:task-)?(\\d+)\\b)`,
-    'gi',
-  );
-
-  const segments: MentionSegment[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) segments.push({ text: text.slice(last, m.index), type: 'plain' });
-    const personId = m[1];
-    const personName = nameAlt ? m[2] : undefined;
-    if (personId !== undefined) {
-      const name = byId.get(personId);
-      segments.push({ text: name ? `@${name}` : '@unknown', type: 'person' });
-    } else if (personName !== undefined) {
-      segments.push({ text: m[0], type: 'person' });
-    } else {
-      segments.push({ text: m[0], type: 'task' });
-    }
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) segments.push({ text: text.slice(last), type: 'plain' });
-  return segments;
-}
-
 // A single entry in the combined @-mention autocomplete dropdown.
 export type MentionItem =
   | { kind: 'task'; task: Task }

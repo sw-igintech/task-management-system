@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent, FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent } from 'react';
+import { useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,7 +9,6 @@ import { Select } from './ui/Select';
 import { Textarea } from './ui/Textarea';
 import { Button } from './ui/Button';
 import { MentionSuggestions } from './MentionSuggestions';
-import { MentionPreview } from './MentionPreview';
 import {
   getMentionItems,
   prepareMentionsForEditing,
@@ -115,25 +114,16 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   });
 
   // Automatic dated traceability prefix for Notes/Description.
-  // Per-field flag: whether the CURRENT focus interaction already auto-inserted a
-  // prefix. Reset on focus so each new editing interaction inserts exactly once
-  // (avoids "(17.06.26) (17.06.26) ..." on every keystroke). The inserted text is
-  // ordinary editable text — the user may delete/keep/ignore it and we never re-add it.
-  const tracePrefixDone = useRef<Record<TraceField, boolean>>({ notes: false, description: false });
+  // The prefix is inserted ONLY on the first meaningful typing/paste into an EMPTY field,
+  // or on Enter (a new dated bullet line). It is NOT tied to focus — focusing, blurring,
+  // clicking out and back in never insert anything (the previous focus-armed flag caused a
+  // spurious bullet on refocus of a populated field). Once any text exists, typing is plain.
 
-  // Inserts "• (DD.MM.YY) " + the just-typed/pasted text at the cursor, replacing any
-  // selection, then restores focus and places the caret right after the typed text.
+  // Inserts "• (DD.MM.YY) " + the just-typed/pasted text into an empty field, then restores
+  // focus and places the caret right after the typed text.
   const insertTracePrefix = (el: HTMLTextAreaElement, field: TraceField, typed: string) => {
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    const before = el.value.slice(0, start);
-    const after = el.value.slice(end);
-    // Put the trace on its own line unless we're at the very start or already right
-    // after a newline (keeps existing text intact; predictable for mid-line edits).
-    const lead = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-    const head = before + lead + formatTracePrefix(new Date()) + typed;
-    setValue(field, head + after, { shouldDirty: true, shouldTouch: true });
-    tracePrefixDone.current[field] = true;
+    const head = formatTracePrefix(new Date()) + typed;
+    setValue(field, head, { shouldDirty: true, shouldTouch: true });
     // setValue updates the uncontrolled textarea's value via RHF's ref; restore the
     // caret on the next frame so it lands after the inserted prefix + typed text.
     requestAnimationFrame(() => {
@@ -153,7 +143,6 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     const lead = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
     const head = before + lead + formatTracePrefix(new Date());
     setValue(field, head + after, { shouldDirty: true, shouldTouch: true });
-    tracePrefixDone.current[field] = true;
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(head.length, head.length);
@@ -162,25 +151,20 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
 
   // The field name comes from the textarea's `name` attribute (set by register()),
   // so these stay single, directly-assigned event handlers (no currying at render).
-  // New editing interaction → re-arm the auto-insert for the next typed character.
-  const handleTraceFocus = (e: ReactFocusEvent<HTMLTextAreaElement>) => {
-    tracePrefixDone.current[e.currentTarget.name as TraceField] = false;
-  };
-
   const handleTraceKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
-    if (tracePrefixDone.current[field]) return;        // already inserted this interaction
+    if (e.currentTarget.value !== '') return;          // only auto-prefix an EMPTY field
     if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) return; // IME composition (e.g. dead keys / CJK): don't interfere
     if (e.ctrlKey || e.metaKey || e.altKey) return;    // shortcuts (Ctrl+A/C/V/Z…); paste handled separately
     if (e.key.length !== 1) return;                    // only printable chars; excludes Enter, Tab, arrows, Backspace, Delete, Home/End, PageUp/Down, Esc, modifiers
-    // First printable keystroke of this interaction → insert prefix + this char.
+    // First printable keystroke into the empty field → insert prefix + this char.
     e.preventDefault();
     insertTracePrefix(e.currentTarget, field, e.key);
   };
 
   const handleTracePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
-    if (tracePrefixDone.current[field]) return;
+    if (e.currentTarget.value !== '') return;          // only auto-prefix an EMPTY field
     const text = e.clipboardData.getData('text');
     if (!text) return;
     e.preventDefault();
@@ -349,7 +333,6 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
         <Textarea
           label="Description"
           {...descReg}
-          onFocus={handleTraceFocus}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
@@ -366,14 +349,12 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onHover={setActiveIndex}
           />
         )}
-        <MentionPreview text={watch('description') ?? ''} people={people} />
       </div>
 
       <div className="relative">
         <Textarea
           label="Notes"
           {...notesReg}
-          onFocus={handleTraceFocus}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
@@ -390,7 +371,6 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onHover={setActiveIndex}
           />
         )}
-        <MentionPreview text={watch('notes') ?? ''} people={people} />
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
