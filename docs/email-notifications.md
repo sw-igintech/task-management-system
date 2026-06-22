@@ -87,18 +87,30 @@ It is a lightweight way to say *who is acting* so mention emails name the right 
   stored id no longer matches a known person (e.g. that person was removed) it is **cleared
   gracefully** and the selector falls back to its `Select user` placeholder.
 - **You can type/select mentions without choosing a Current user.** Saving is blocked
-  **only** when a save adds *newly added* person mentions and no Current user is selected —
-  an inline message *"Please select Current user before saving mentions."* appears next to
-  the Save/Update button (never a modal/popup). Ordinary edits, `@TASK`-only edits, and
-  unchanged existing mentions all save without a Current user.
+  **only** when a save would send an **actor-dependent email** and no Current user is
+  selected. Two triggers:
+  1. the save adds *newly added* person mentions (inline message *"Please select Current
+     user before saving mentions."*), or
+  2. on an **edit**, the save changes **Description or Notes** on a task assigned to a
+     responsible person who has an email — i.e. it would send the *task-updated*
+     notification (inline message *"Please select Current user before saving changes."*).
+  The message appears next to the Save/Update button (never a modal/popup). Ordinary edits,
+  `@TASK`-only edits, unchanged mentions, unassigned tasks, and a responsible person with no
+  email all save without a Current user.
+- **Attention cue.** When such a save is blocked, the header **Current user** selector gets
+  a pulsing red ring (`.current-user-attention` in `src/index.css`; honours
+  `prefers-reduced-motion` with a static ring). The cue starts on the blocked save and stops
+  as soon as a valid Current user is selected.
 - **On the wire:** when a Current user is selected, create/update requests include the
   optional `actor_person_id` field (see `docs/cloudflare-worker-api.md`). It is the actor of
   *this request only* — it is **never stored** on the task. The Worker uses it to resolve the
-  mention-email actor, falling back to the opener when absent/unresolved.
+  mention/update-email actor, falling back to the opener when absent/unresolved.
 
-Implementation: `src/hooks/useCurrentUser.ts` (state + localStorage), the selector in
-`src/App.tsx`, the save gate in `src/components/TaskForm.tsx`, and the `actor_person_id`
-pass-through in `src/hooks/useTasks.ts` → `src/lib/taskApi.ts`.
+Implementation: `src/hooks/useCurrentUser.ts` (state + localStorage + `needsSelection` cue
+flag — lazy localStorage initializer means the saved user is shown from first paint, no
+hydration reset), the selector + cue in `src/App.tsx`, the save gate in
+`src/components/TaskForm.tsx`, and the `actor_person_id` pass-through in
+`src/hooks/useTasks.ts` → `src/lib/taskApi.ts`.
 
 ### Overdue indicator (related UI)
 
@@ -120,16 +132,24 @@ Display-only — it mutates no data.
 | Task created mentioning people | each mentioned person (if they have an email) | mention (incl. actor name) |
 | Task updated, responsible person **changed** | the **new** responsible person | assignment |
 | Task updated with **new** mentions | only the **newly** mentioned people | mention |
+| Task updated, **Description or Notes changed** | the responsible person (if they have an email) | **update** (incl. actor name + changed fields) |
 
-Archive/restore send **no** email (no responsible/mention change). Mention emails are
-**live**: anyone mentioned in Description or Notes with an email on file is notified.
+Archive/restore send **no** email (no responsible/mention/Description/Notes change). Mention
+emails are **live**: anyone mentioned in Description or Notes with an email on file is notified.
 
 ### De-duplication
 
-A person is emailed **at most once per action**. If someone is both the responsible
-person and mentioned in the same task, they get a single **assignment** email (assignment
-takes precedence over mention). On update, people already mentioned *before* the edit are
-**not** re-notified — only newly added mentions are.
+A person is emailed **at most once per action**, with precedence **assignment > mention >
+update**:
+
+- If someone is both the responsible person and mentioned in the same task, they get a
+  single **assignment** email (assignment beats mention).
+- On update, people already mentioned *before* the edit are **not** re-notified — only newly
+  added mentions are.
+- The **update** notification (Description/Notes changed) goes to the responsible person
+  **only** if they aren't already getting an assignment or mention email for the same save,
+  **and** they are not the actor performing the edit (no self-notification). If both
+  Description and Notes changed, it is still **one** email listing both fields.
 
 ### Provider: Resend (only)
 
@@ -211,6 +231,22 @@ Hi <recipient name>,
 
 Task: TASK-<number> - <title>
 Opened by: <opened_by name, or "Unknown">
+
+Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
+```
+
+**Update (Description/Notes changed)** — to the responsible person:
+```
+Subject: Task updated: TASK-<number> - <title>
+
+Hi <recipient name>,
+
+<actor name> updated a task assigned to you.
+
+Task: TASK-<number> - <title>
+Opened by: <opened_by name, or "Unknown">
+Updated by: <actor name, or "Someone">
+Changed fields: Description / Notes   (only whichever actually changed)
 
 Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```

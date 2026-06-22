@@ -17,7 +17,7 @@ function AppInner() {
   const hookData = useTasks();
   // Lightweight actor selector (not auth). Stored in localStorage; used as the actor for
   // mention notification emails. Validated against the loaded people list.
-  const { currentUserId, setCurrentUserId } = useCurrentUser(hookData.people);
+  const { currentUserId, setCurrentUserId, needsSelection, requestSelection } = useCurrentUser(hookData.people);
 
   const switchToTasksWithFilters = (filters?: Partial<TaskFilters>) => {
     if (filters) {
@@ -68,14 +68,18 @@ function AppInner() {
 
           <div className="flex items-center gap-2">
             {/* Current user — lightweight actor selector (not authentication). Persisted in
-                localStorage; used as the actor for mention notification emails. */}
-            <label className="flex items-center gap-1.5 text-xs text-gray-600">
-              <User size={13} className="text-gray-400" />
+                localStorage; used as the actor for notification emails. When a save is
+                blocked for a missing Current user, `needsSelection` adds a pulsing red ring
+                (the .current-user-attention cue) to draw the eye here. */}
+            <label className={`flex items-center gap-1.5 text-xs ${needsSelection ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+              <User size={13} className={needsSelection ? 'text-red-500' : 'text-gray-400'} />
               <span className="hidden sm:inline">Current user:</span>
               <select
                 value={currentUserId ?? ''}
                 onChange={e => setCurrentUserId(e.target.value || null)}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`rounded-md border bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                  needsSelection ? 'current-user-attention' : 'border-gray-300 focus:border-blue-500'
+                }`}
                 aria-label="Current user"
               >
                 <option value="">Select user</option>
@@ -108,7 +112,7 @@ function AppInner() {
             <div className="text-gray-400 text-sm">Loading tasks...</div>
           </div>
         ) : activeTab === 'tasks' ? (
-          <TasksPage hookData={hookData} currentUserId={currentUserId} />
+          <TasksPage hookData={hookData} currentUserId={currentUserId} onCurrentUserRequired={requestSelection} />
         ) : (
           <DashboardPage hookData={hookData} onNavigateToTasks={switchToTasksWithFilters} />
         )}

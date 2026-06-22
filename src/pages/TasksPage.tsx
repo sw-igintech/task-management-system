@@ -16,9 +16,11 @@ interface TasksPageProps {
   // Selected current user id (actor), or null. Forwarded as actor_person_id on
   // create/update and used by TaskForm to gate saving newly added person mentions.
   currentUserId: string | null;
+  // Called when a save is blocked for a missing Current user → lights the header cue.
+  onCurrentUserRequired: () => void;
 }
 
-export function TasksPage({ hookData, currentUserId }: TasksPageProps) {
+export function TasksPage({ hookData, currentUserId, onCurrentUserRequired }: TasksPageProps) {
   const {
     tasks,
     filteredTasks,
@@ -239,6 +241,7 @@ export function TasksPage({ hookData, currentUserId }: TasksPageProps) {
           onTaskReference={handleTaskReference}
           mentionTasks={tasks}
           currentUserId={currentUserId}
+          onCurrentUserRequired={onCurrentUserRequired}
         />
       </div>
 
@@ -254,6 +257,7 @@ export function TasksPage({ hookData, currentUserId }: TasksPageProps) {
           onCancel={() => setAddModalOpen(false)}
           mentionTasks={tasks}
           currentUserId={currentUserId}
+          onCurrentUserRequired={onCurrentUserRequired}
         />
       </Modal>
     </div>
