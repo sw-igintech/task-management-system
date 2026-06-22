@@ -52,12 +52,14 @@ export interface TaskRow {
   opened_by_person_id?: string | null;
 }
 
-type RecipientKind = 'assignment' | 'mention';
+type RecipientKind = 'assignment' | 'mention' | 'update';
 interface Recipient {
   personId: string;
   name: string;
   email: string;
   kind: RecipientKind;
+  // For the 'update' kind only: which of Description/Notes actually changed, in order.
+  changedFields?: string[];
 }
 
 // Mirror of src/lib/mentions.ts — kept duplicated because the Worker is a separate
@@ -86,6 +88,17 @@ function taskMentionIds(task: TaskRow): string[] {
   return Array.from(new Set(all));
 }
 
+// Which of Description / Notes actually changed between the old and new task row. Compared
+// as stored text (null treated as empty), so a PATCH that leaves a field untouched — or
+// re-sends an identical value — counts as no change. Returns the human-readable labels in
+// display order; empty array means neither changed.
+function changedTextFields(oldTask: TaskRow, newTask: TaskRow): string[] {
+  const fields: string[] = [];
+  if ((oldTask.description ?? '') !== (newTask.description ?? '')) fields.push('Description');
+  if ((oldTask.notes ?? '') !== (newTask.notes ?? '')) fields.push('Notes');
+  return fields;
+}
+
 // Adds a recipient if the person exists, has a non-empty email, and is not already
 // queued. Assignment is added before mentions, so a person who is BOTH the (new)
 // responsible person and (newly) mentioned receives exactly ONE assignment email.
@@ -111,14 +124,18 @@ export function computeCreateRecipients(task: TaskRow, peopleById: Map<string, P
   return [...map.values()];
 }
 
-// Recipients for an updated task:
-//  * the NEW responsible person, only if responsible_person_id actually changed;
-//  * people mentioned now but NOT before the update (newly mentioned only).
-// De-duplicated with assignment precedence.
+// Recipients for an updated task, de-duplicated to AT MOST ONE email per person with
+// precedence assignment > mention > update (the order they are added below):
+//  * the NEW responsible person, only if responsible_person_id actually changed (assignment);
+//  * people mentioned now but NOT before the update (mention, newly mentioned only);
+//  * the responsible person when Description/Notes changed (update) — unless they were just
+//    newly assigned or newly mentioned (already queued above), or they ARE the actor
+//    (no self-notification). `actorPersonId` is the Current user who performed the edit.
 export function computeUpdateRecipients(
   oldTask: TaskRow,
   newTask: TaskRow,
   peopleById: Map<string, PersonRow>,
+  actorPersonId: string | null | undefined,
 ): Recipient[] {
   const map = new Map<string, Recipient>();
   if (newTask.responsible_person_id && newTask.responsible_person_id !== oldTask.responsible_person_id) {
@@ -128,6 +145,18 @@ export function computeUpdateRecipients(
   for (const id of taskMentionIds(newTask)) {
     if (!before.has(id)) addRecipient(map, peopleById, id, 'mention');
   }
+
+  // Description/Notes update notification to the (unchanged-or-existing) responsible person.
+  const changedFields = changedTextFields(oldTask, newTask);
+  const respId = newTask.responsible_person_id;
+  if (changedFields.length > 0 && respId && respId !== actorPersonId && !map.has(respId)) {
+    const person = peopleById.get(respId);
+    const email = person?.email?.trim();
+    if (person && email) {
+      map.set(respId, { personId: respId, name: person.name, email, kind: 'update', changedFields });
+    }
+  }
+
   return [...map.values()];
 }
 
@@ -176,6 +205,25 @@ export function buildEmail(
         `Status: ${status}\n` +
         `Priority: ${task.priority ?? '—'}\n` +
         `Due date: ${due}\n\n` +
+        `Open task: ${url}\n`,
+    };
+  }
+
+  if (recipient.kind === 'update') {
+    // Who performed the update — the actor (Current user), falling back as elsewhere.
+    const updatedBy = actorName && actorName.trim() ? actorName.trim() : 'Someone';
+    const changed = recipient.changedFields && recipient.changedFields.length
+      ? recipient.changedFields.join(' / ')
+      : 'Description / Notes';
+    return {
+      subject: `Task updated: ${key} - ${title}`,
+      text:
+        `Hi ${recipient.name},\n\n` +
+        `${updatedBy} updated a task assigned to you.\n\n` +
+        `Task: ${key} - ${title}\n` +
+        `Opened by: ${openedBy}\n` +
+        `Updated by: ${updatedBy}\n` +
+        `Changed fields: ${changed}\n\n` +
         `Open task: ${url}\n`,
     };
   }

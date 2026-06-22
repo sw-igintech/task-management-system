@@ -145,7 +145,7 @@ async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: 
     const peopleById = await loadPeopleById(env);
     await dispatchEmails(
       env,
-      computeUpdateRecipients(oldTask, newTask, peopleById),
+      computeUpdateRecipients(oldTask, newTask, peopleById, actorPersonId),
       newTask,
       actorNameFor(actorPersonId, newTask, peopleById),
       openedByNameFor(newTask, peopleById),

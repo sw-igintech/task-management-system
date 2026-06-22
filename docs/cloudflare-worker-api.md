@@ -156,7 +156,8 @@ runtime secrets** (no `SUPABASE_URL`, no `SUPABASE_SERVICE_ROLE_KEY`). Deploymen
 ## Email notifications (Resend) — ENABLED in production
 
 `POST /api/tasks` and `PATCH /api/tasks/:id` trigger Resend email notifications
-(assignment + person mentions). It **never affects the response**: emails run detached via
+(assignment + person mentions + a Description/Notes "task updated" notification to the
+responsible person). It **never affects the response**: emails run detached via
 `ctx.waitUntil(...)`, and the task create/update succeeds even if email is disabled,
 misconfigured, or Resend fails.
 

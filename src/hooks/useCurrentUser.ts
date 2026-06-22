@@ -33,19 +33,30 @@ export interface CurrentUser {
   // The selected person id, or null when nothing is selected (placeholder shown).
   currentUserId: string | null;
   setCurrentUserId: (id: string | null) => void;
+  // True when a save was blocked because no Current user is selected. Drives the
+  // attention cue on the header selector. Cleared automatically once a valid user is set.
+  needsSelection: boolean;
+  // Called when a save is blocked for a missing Current user — turns the cue on.
+  requestSelection: () => void;
 }
 
 // `people` is the loaded people list (from useTasks). Once it is available the stored id
 // is validated against it; an unknown/stale id is cleared so the selector falls back to
 // the placeholder rather than pointing at a non-existent person.
 export function useCurrentUser(people: Person[]): CurrentUser {
+  // Lazy initializer reads localStorage synchronously on first render, so the selected id
+  // is present from the very first paint — no flash-to-empty / hydration reset.
   const [currentUserId, setCurrentUserIdState] = useState<string | null>(() => readStored());
+  const [needsSelection, setNeedsSelection] = useState(false);
 
   const setCurrentUserId = useCallback((id: string | null) => {
     const next = id && id !== '' ? id : null;
     setCurrentUserIdState(next);
     writeStored(next);
+    if (next) setNeedsSelection(false); // a valid selection turns the attention cue off
   }, []);
+
+  const requestSelection = useCallback(() => setNeedsSelection(true), []);
 
   // When people load (or change), drop a selection that no longer resolves. The state
   // clear is deferred to a timer so it runs outside the synchronous effect body (matching
@@ -61,5 +72,5 @@ export function useCurrentUser(people: Person[]): CurrentUser {
     }
   }, [people, currentUserId]);
 
-  return { currentUserId, setCurrentUserId };
+  return { currentUserId, setCurrentUserId, needsSelection, requestSelection };
 }

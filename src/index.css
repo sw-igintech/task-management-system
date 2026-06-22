@@ -118,9 +118,35 @@
     font-style: italic;
   }
 
+  /* keyframes for the Current user attention cue (see .current-user-attention below) */
+}
+
+@keyframes currentUserAttentionPulse {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+@layer components {
+
   /* Brief highlight when jumping to a referenced task row */
   .task-row-highlight td {
     background-color: #fef9c3;
     transition: background-color 0.4s ease;
+  }
+
+  /* Attention cue on the header "Current user" selector when a save was blocked because
+     no Current user is selected. A pulsing red ring draws the eye to the selector; it
+     stops as soon as a valid user is chosen (the class is removed). */
+  .current-user-attention {
+    border-color: #dc2626 !important;
+    animation: currentUserAttentionPulse 1.1s ease-out infinite;
+  }
+  /* Respect reduced-motion: drop the animation but keep a clear static red ring. */
+  @media (prefers-reduced-motion: reduce) {
+    .current-user-attention {
+      animation: none;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.35);
+    }
   }
 }

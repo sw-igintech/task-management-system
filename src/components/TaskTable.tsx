@@ -33,6 +33,8 @@ interface TaskTableProps {
   // Selected current user id (actor), or null — passed to the inline edit form to gate
   // saving newly added person mentions.
   currentUserId: string | null;
+  // Called when an inline-edit save is blocked for a missing Current user → header cue.
+  onCurrentUserRequired: () => void;
 }
 
 const columns: ColumnDef<Task>[] = [
@@ -73,6 +75,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
   onTaskReference,
   mentionTasks,
   currentUserId,
+  onCurrentUserRequired,
 }: TaskTableProps, ref) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -219,6 +222,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
                 onTaskReference={onTaskReference}
                 mentionTasks={mentionTasks}
                 currentUserId={currentUserId}
+                onCurrentUserRequired={onCurrentUserRequired}
                 rowIndex={idx}
               />
             ))}

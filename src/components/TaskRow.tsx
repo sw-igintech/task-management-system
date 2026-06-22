@@ -24,6 +24,8 @@ interface TaskRowProps {
   mentionTasks: Task[];
   // Selected current user id (actor), or null — gates saving newly added mentions.
   currentUserId: string | null;
+  // Called when this row's edit save is blocked for a missing Current user → header cue.
+  onCurrentUserRequired: () => void;
   rowIndex: number;
 }
 
@@ -43,6 +45,7 @@ export function TaskRow({
   onTaskReference,
   mentionTasks,
   currentUserId,
+  onCurrentUserRequired,
   rowIndex,
 }: TaskRowProps) {
   const task = row.original;
@@ -201,6 +204,7 @@ export function TaskRow({
                   isLoading={saving}
                   mentionTasks={mentionTasks}
                   currentUserId={currentUserId}
+                  onCurrentUserRequired={onCurrentUserRequired}
                 />
               </div>
             ) : (

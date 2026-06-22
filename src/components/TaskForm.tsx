@@ -70,12 +70,16 @@ interface TaskFormProps {
   // Source for @-mention autocomplete suggestions (the loaded task list). Optional
   // so existing callers without it simply get no suggestions.
   mentionTasks?: Task[];
-  // Selected current user id (actor), or null. Required only when the save adds NEW
-  // person mentions — see onFormSubmit. Optional so non-mention callers are unaffected.
+  // Selected current user id (actor), or null. Required when the save adds NEW person
+  // mentions OR will send the responsible-person update notification — see onFormSubmit.
+  // Optional so non-mention callers are unaffected.
   currentUserId?: string | null;
+  // Called when a save is blocked for a missing Current user, so the header selector can
+  // show its attention cue. Optional — callers without it just get the inline message.
+  onCurrentUserRequired?: () => void;
 }
 
-export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionTasks = [], currentUserId }: TaskFormProps) {
+export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionTasks = [], currentUserId, onCurrentUserRequired }: TaskFormProps) {
   const {
     register,
     handleSubmit,
@@ -99,9 +103,10 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     },
   });
 
-  // Inline validation flag: a save was ATTEMPTED that adds NEW person mentions while no
-  // Current user is selected. Shown next to the Save button; never a modal/popup/alert.
-  const [mentionActorMissing, setMentionActorMissing] = useState(false);
+  // Inline validation flag: a save was ATTEMPTED while no Current user is selected but the
+  // save would send an actor-dependent email (new mention, or a Description/Notes update to
+  // an assigned person). Shown next to the Save button; never a modal/popup/alert.
+  const [blockedForCurrentUser, setBlockedForCurrentUser] = useState(false);
 
   // Person-mention ids ALREADY on the task before this edit (stored "@person:<id>" form).
   // Empty for a brand-new task → every person mention then counts as newly added.
@@ -110,48 +115,84 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     [task?.description, task?.notes, people],
   );
 
-  // Live person-mention ids in the editable textareas. Detected DIRECTLY from the editable
-  // text (both visible "@Name" and stored "@person:<id>") — NOT via serialization — so a
-  // "@Name" mention is caught even if serialization would be a no-op. watch() keeps this in
-  // sync with every keystroke so the warning below clears as soon as the mention is removed.
+  // Live editable values. watch() keeps these in sync with every keystroke so the derived
+  // warning below clears the moment the triggering content is removed.
   const liveDescription = watch('description');
   const liveNotes = watch('notes');
+  const liveResponsibleId = watch('responsible_person_id');
+
+  // Live person-mention ids in the editable textareas. Detected DIRECTLY from the editable
+  // text (both visible "@Name" and stored "@person:<id>") — NOT via serialization — so a
+  // "@Name" mention is caught even if serialization would be a no-op.
   const hasNewlyAddedMention = useMemo(() => {
     const current = getTaskPersonMentionIdsFromEditableText(liveDescription, liveNotes, people);
     return current.some(id => !previousMentionIds.has(id));
   }, [liveDescription, liveNotes, people, previousMentionIds]);
 
+  // Will saving this edit send the responsible-person "task updated" notification (which
+  // names the actor)? Only on EDITS, to an assigned responsible person who HAS an email,
+  // when the serialized Description or Notes actually differ from what is stored. Mirrors
+  // the Worker's send rule so the Current-user requirement matches exactly when an
+  // actor-dependent update email will go out. (Create assigns via the opener-based
+  // assignment email, which needs no actor — so it is excluded.)
+  const willNotifyResponsibleOnUpdate = useMemo(() => {
+    if (!task) return false;
+    const respId = liveResponsibleId || undefined;
+    if (!respId) return false;
+    const resp = people.find(p => p.id === respId);
+    if (!resp?.email) return false;
+    const newDescription = serializeMentionsForStorage(liveDescription ?? '', people);
+    const newNotes = serializeMentionsForStorage(liveNotes ?? '', people);
+    return newDescription !== (task.description ?? '') || newNotes !== (task.notes ?? '');
+  }, [task, people, liveResponsibleId, liveDescription, liveNotes]);
+
+  // A save needs a Current user when it would send an actor-dependent email.
+  const saveNeedsCurrentUser = hasNewlyAddedMention || willNotifyResponsibleOnUpdate;
+
   // The inline message is DERIVED, so it auto-clears the moment any of these change:
   //   • a Current user is selected (currentUserId becomes truthy),
-  //   • the newly added mention is removed (hasNewlyAddedMention becomes false),
-  //   • the form saves successfully (mentionActorMissing reset + the form unmounts/closes).
-  const showMentionActorWarning = mentionActorMissing && !currentUserId && hasNewlyAddedMention;
+  //   • the triggering content is removed (saveNeedsCurrentUser becomes false),
+  //   • the form saves successfully (the form unmounts/closes).
+  const showCurrentUserWarning = blockedForCurrentUser && !currentUserId && saveNeedsCurrentUser;
+  const currentUserWarningMessage = hasNewlyAddedMention
+    ? 'Please select Current user before saving mentions.'
+    : 'Please select Current user before saving changes.';
 
   // On save, convert the friendly "@Name" mentions back to the stable "@person:<id>"
   // storage form. @TASK references and ordinary text are left untouched.
   //
-  // Guard: if this save introduces person mentions not already present on the task and no
-  // Current user is selected, block the submit and surface the inline message (form data is
-  // kept intact). Ordinary edits, @TASK-only edits, and unchanged existing mentions all save
-  // without a Current user. Detection uses getTaskPersonMentionIdsFromEditableText on the
-  // EDITABLE text (independent of serialization), so @TASK refs never count and a
-  // Description/Notes duplicate collapses to one id.
+  // Guard: block the submit (keeping form data intact, no modal) when no Current user is
+  // selected AND the save would send an actor-dependent email — i.e. it adds a NEW person
+  // mention, OR it changes Description/Notes on a task assigned to someone with an email.
+  // Ordinary edits, @TASK-only edits, unchanged mentions, and unassigned tasks all save
+  // without a Current user. Mention detection is serialization-independent; the Desc/Notes
+  // change check compares the serialized new value against the stored task value.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onFormSubmit = handleSubmit((data: any) => {
+    const submittedDescription = serializeMentionsForStorage(data.description ?? '', people);
+    const submittedNotes = serializeMentionsForStorage(data.notes ?? '', people);
+
     const currentMentionIds = getTaskPersonMentionIdsFromEditableText(data.description, data.notes, people);
     const hasNewMentions = currentMentionIds.some(id => !previousMentionIds.has(id));
 
-    if (hasNewMentions && !currentUserId) {
-      setMentionActorMissing(true);
+    // Mirror of willNotifyResponsibleOnUpdate, recomputed from the submitted data.
+    const willNotifyResponsible = (() => {
+      if (!task) return false;
+      const respId = data.responsible_person_id || undefined;
+      if (!respId) return false;
+      const resp = people.find(p => p.id === respId);
+      if (!resp?.email) return false;
+      return submittedDescription !== (task.description ?? '') || submittedNotes !== (task.notes ?? '');
+    })();
+
+    if ((hasNewMentions || willNotifyResponsible) && !currentUserId) {
+      setBlockedForCurrentUser(true);
+      onCurrentUserRequired?.(); // light the header attention cue
       return; // keep the form intact; do not submit
     }
 
-    setMentionActorMissing(false);
-    onSubmit({
-      ...(data as TaskFormData),
-      description: serializeMentionsForStorage(data.description ?? '', people),
-      notes: serializeMentionsForStorage(data.notes ?? '', people),
-    });
+    setBlockedForCurrentUser(false);
+    onSubmit({ ...(data as TaskFormData), description: submittedDescription, notes: submittedNotes });
   });
 
   // Live overdue indicator under the Due Date field (display-only; mutates nothing).
@@ -422,9 +463,9 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       </div>
 
       <div className="flex flex-col items-end gap-1 pt-2">
-        {showMentionActorWarning && (
+        {showCurrentUserWarning && (
           <p className="text-xs text-red-600" role="alert">
-            Please select Current user before saving mentions.
+            {currentUserWarningMessage}
           </p>
         )}
         <div className="flex justify-end gap-2">
