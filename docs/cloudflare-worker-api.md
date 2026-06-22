@@ -99,6 +99,12 @@ curl -X POST https://task-management-api.sw-590.workers.dev/api/people \
 - `due_date` / `closed_date` — `null` or `YYYY-MM-DD` (empty string is coerced to `null`).
 - `responsible_person_id` / `opened_by_person_id` — string id or `null` (empty → `null`).
 - `archived` — boolean.
+- `actor_person_id` — **optional** string id or `null`. Accepted on `POST /api/tasks` and
+  `PATCH /api/tasks/:id`. It is the **actor of this request** (the app's "Current user"),
+  used only to resolve the mention-email actor — it is **never stored** on the task (it is
+  stripped before the task field whitelist runs). A non-string value → `400`; an id that
+  doesn't match a real person is **not** rejected (it falls back to the opener at email
+  time). Omitting it is always fine (old clients are unaffected).
 - `POST /api/people` — `name` required, trimmed, non-empty; `email` optional.
 - PATCH with no editable fields → `400`; PATCH/archive/restore on a missing id → `404`.
 
@@ -165,9 +171,10 @@ Worker env:
 
 The vars are declared in `worker/wrangler.toml` `[env.production.vars]`. Code lives in
 `worker/src/email.ts`. Emails are in **English**: the assignment email includes an
-`Opened by: <name>` line plus status/priority/due date; the mention email names the actor
-(the opener — no current-user concept) and also includes the `Opened by:` line; both
-include a deep link `…?task=TASK-<number>` that opens the task already expanded. Full behaviour, recipient
+`Opened by: <name>` line plus status/priority/due date; the mention email names the **actor**
+(the optional `actor_person_id` / "Current user" when provided, otherwise the opener) and
+also includes the `Opened by:` line (always the opener). Both include a deep link
+`…?task=TASK-<number>` that opens the task already expanded. Full behaviour, recipient
 de-duplication, content, and free-tier limits: [`docs/email-notifications.md`](email-notifications.md).
 
 ## Deployment

@@ -20,6 +20,9 @@ A complete task management system for the engineering team, built with Vite + Re
   (`EMAIL_ENABLED=true`, sender domain `task-notification.xyz`); assignment emails name the
   opener, every email deep-links to the specific task (`?task=TASK-<n>`, opens it expanded);
   best-effort, never blocks a task save; see [`docs/email-notifications.md`](docs/email-notifications.md)
+- **Current user** selector in the header (lightweight actor, **not** authentication) — stored
+  in `localStorage`; sent as the optional `actor_person_id` so mention emails name who acted
+  ("Matan mentioned you…"); saving newly added mentions requires it (inline prompt, no popup)
 
 ## Quick Start
 

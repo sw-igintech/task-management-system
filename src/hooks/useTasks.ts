@@ -115,10 +115,15 @@ export function useTasks() {
 
   const addTask = useCallback(async (
     taskData: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'archived'>,
+    // Optional actor (current user) — sent only to the Worker API and used purely to
+    // resolve the mention-email actor. Never stored on the task. Not auth.
+    actorPersonId?: string | null,
   ): Promise<Task | null> => {
     if (USE_WORKER_API) {
       try {
-        const created = await taskApi.createTask({ ...toDbPayload(taskData), archived: false });
+        const payload: Record<string, unknown> = { ...toDbPayload(taskData), archived: false };
+        if (actorPersonId) payload.actor_person_id = actorPersonId;
+        const created = await taskApi.createTask(payload);
         const newTask = joinPerson(created, new Map(people.map(p => [p.id, p])));
         setTasks(prev => [...prev, newTask]);
         return newTask;
@@ -157,10 +162,15 @@ export function useTasks() {
   const updateTask = useCallback(async (
     id: string,
     updates: Partial<Task>,
+    // Optional actor (current user) — Worker-only, used for the mention-email actor.
+    // Never stored on the task. Not auth.
+    actorPersonId?: string | null,
   ): Promise<Task | null> => {
     if (USE_WORKER_API) {
       try {
-        const updatedRow = await taskApi.updateTask(id, toDbPayload(updates));
+        const patch: Record<string, unknown> = toDbPayload(updates);
+        if (actorPersonId) patch.actor_person_id = actorPersonId;
+        const updatedRow = await taskApi.updateTask(id, patch);
         const updatedTask = joinPerson(updatedRow, new Map(people.map(p => [p.id, p])));
         setTasks(prev => prev.map(t => (t.id === id ? updatedTask : t)));
         return updatedTask;

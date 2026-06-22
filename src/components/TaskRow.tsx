@@ -22,6 +22,8 @@ interface TaskRowProps {
   getTaskByNumber: (n: number) => Task | undefined;
   onTaskReference: (n: number) => void;
   mentionTasks: Task[];
+  // Selected current user id (actor), or null — gates saving newly added mentions.
+  currentUserId: string | null;
   rowIndex: number;
 }
 
@@ -40,6 +42,7 @@ export function TaskRow({
   getTaskByNumber,
   onTaskReference,
   mentionTasks,
+  currentUserId,
   rowIndex,
 }: TaskRowProps) {
   const task = row.original;
@@ -197,6 +200,7 @@ export function TaskRow({
                   onCancel={handleCancel}
                   isLoading={saving}
                   mentionTasks={mentionTasks}
+                  currentUserId={currentUserId}
                 />
               </div>
             ) : (

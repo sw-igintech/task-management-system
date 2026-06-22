@@ -13,6 +13,7 @@ import {
   getMentionItems,
   prepareMentionsForEditing,
   serializeMentionsForStorage,
+  extractTaskPersonMentionIds,
   type MentionItem,
 } from '../lib/mentions';
 import { STATUS_LABELS, PRIORITY_LABELS, formatOverdue } from '../lib/utils';
@@ -69,9 +70,12 @@ interface TaskFormProps {
   // Source for @-mention autocomplete suggestions (the loaded task list). Optional
   // so existing callers without it simply get no suggestions.
   mentionTasks?: Task[];
+  // Selected current user id (actor), or null. Required only when the save adds NEW
+  // person mentions — see onFormSubmit. Optional so non-mention callers are unaffected.
+  currentUserId?: string | null;
 }
 
-export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionTasks = [] }: TaskFormProps) {
+export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionTasks = [], currentUserId }: TaskFormProps) {
   const {
     register,
     handleSubmit,
@@ -95,16 +99,35 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     },
   });
 
+  // Inline validation flag: a save was attempted that adds NEW person mentions while no
+  // Current user is selected. Shown next to the Save button; never a modal/popup/alert.
+  const [mentionActorMissing, setMentionActorMissing] = useState(false);
+
   // On save, convert the friendly "@Name" mentions back to the stable "@person:<id>"
   // storage form. @TASK references and ordinary text are left untouched.
+  //
+  // Guard: if this save introduces person mentions not already present on the task and no
+  // Current user is selected, block the submit and show the inline message (form data is
+  // kept intact). Ordinary edits, @TASK-only edits, and unchanged existing mentions all
+  // save without a Current user. Comparison is on the serialized "@person:<id>" ids, so
+  // @TASK references never count and Description/Notes duplicates collapse to one id.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onFormSubmit = handleSubmit((data: any) =>
-    onSubmit({
-      ...(data as TaskFormData),
-      description: serializeMentionsForStorage(data.description ?? '', people),
-      notes: serializeMentionsForStorage(data.notes ?? '', people),
-    }),
-  );
+  const onFormSubmit = handleSubmit((data: any) => {
+    const description = serializeMentionsForStorage(data.description ?? '', people);
+    const notes = serializeMentionsForStorage(data.notes ?? '', people);
+
+    const submittedMentionIds = extractTaskPersonMentionIds(description, notes);
+    const existingMentionIds = new Set(extractTaskPersonMentionIds(task?.description, task?.notes));
+    const hasNewMentions = submittedMentionIds.some(id => !existingMentionIds.has(id));
+
+    if (hasNewMentions && !currentUserId) {
+      setMentionActorMissing(true);
+      return; // keep the form intact; do not submit
+    }
+
+    setMentionActorMissing(false);
+    onSubmit({ ...(data as TaskFormData), description, notes });
+  });
 
   // Live overdue indicator under the Due Date field (display-only; mutates nothing).
   const overdueLabel = formatOverdue({
@@ -373,13 +396,20 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
         )}
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? 'Saving...' : task ? 'Update Task' : 'Add Task'}
-        </Button>
+      <div className="flex flex-col items-end gap-1 pt-2">
+        {mentionActorMissing && (
+          <p className="text-xs text-red-600" role="alert">
+            Please select Current user before saving mentions.
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isLoading}>
+            {isLoading ? 'Saving...' : task ? 'Update Task' : 'Add Task'}
+          </Button>
+        </div>
       </div>
     </form>
   );
