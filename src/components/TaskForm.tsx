@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,7 +13,7 @@ import {
   getMentionItems,
   prepareMentionsForEditing,
   serializeMentionsForStorage,
-  extractTaskPersonMentionIds,
+  getTaskPersonMentionIdsFromEditableText,
   type MentionItem,
 } from '../lib/mentions';
 import { STATUS_LABELS, PRIORITY_LABELS, formatOverdue } from '../lib/utils';
@@ -99,26 +99,47 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     },
   });
 
-  // Inline validation flag: a save was attempted that adds NEW person mentions while no
+  // Inline validation flag: a save was ATTEMPTED that adds NEW person mentions while no
   // Current user is selected. Shown next to the Save button; never a modal/popup/alert.
   const [mentionActorMissing, setMentionActorMissing] = useState(false);
+
+  // Person-mention ids ALREADY on the task before this edit (stored "@person:<id>" form).
+  // Empty for a brand-new task → every person mention then counts as newly added.
+  const previousMentionIds = useMemo(
+    () => new Set(getTaskPersonMentionIdsFromEditableText(task?.description, task?.notes, people)),
+    [task?.description, task?.notes, people],
+  );
+
+  // Live person-mention ids in the editable textareas. Detected DIRECTLY from the editable
+  // text (both visible "@Name" and stored "@person:<id>") — NOT via serialization — so a
+  // "@Name" mention is caught even if serialization would be a no-op. watch() keeps this in
+  // sync with every keystroke so the warning below clears as soon as the mention is removed.
+  const liveDescription = watch('description');
+  const liveNotes = watch('notes');
+  const hasNewlyAddedMention = useMemo(() => {
+    const current = getTaskPersonMentionIdsFromEditableText(liveDescription, liveNotes, people);
+    return current.some(id => !previousMentionIds.has(id));
+  }, [liveDescription, liveNotes, people, previousMentionIds]);
+
+  // The inline message is DERIVED, so it auto-clears the moment any of these change:
+  //   • a Current user is selected (currentUserId becomes truthy),
+  //   • the newly added mention is removed (hasNewlyAddedMention becomes false),
+  //   • the form saves successfully (mentionActorMissing reset + the form unmounts/closes).
+  const showMentionActorWarning = mentionActorMissing && !currentUserId && hasNewlyAddedMention;
 
   // On save, convert the friendly "@Name" mentions back to the stable "@person:<id>"
   // storage form. @TASK references and ordinary text are left untouched.
   //
   // Guard: if this save introduces person mentions not already present on the task and no
-  // Current user is selected, block the submit and show the inline message (form data is
-  // kept intact). Ordinary edits, @TASK-only edits, and unchanged existing mentions all
-  // save without a Current user. Comparison is on the serialized "@person:<id>" ids, so
-  // @TASK references never count and Description/Notes duplicates collapse to one id.
+  // Current user is selected, block the submit and surface the inline message (form data is
+  // kept intact). Ordinary edits, @TASK-only edits, and unchanged existing mentions all save
+  // without a Current user. Detection uses getTaskPersonMentionIdsFromEditableText on the
+  // EDITABLE text (independent of serialization), so @TASK refs never count and a
+  // Description/Notes duplicate collapses to one id.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onFormSubmit = handleSubmit((data: any) => {
-    const description = serializeMentionsForStorage(data.description ?? '', people);
-    const notes = serializeMentionsForStorage(data.notes ?? '', people);
-
-    const submittedMentionIds = extractTaskPersonMentionIds(description, notes);
-    const existingMentionIds = new Set(extractTaskPersonMentionIds(task?.description, task?.notes));
-    const hasNewMentions = submittedMentionIds.some(id => !existingMentionIds.has(id));
+    const currentMentionIds = getTaskPersonMentionIdsFromEditableText(data.description, data.notes, people);
+    const hasNewMentions = currentMentionIds.some(id => !previousMentionIds.has(id));
 
     if (hasNewMentions && !currentUserId) {
       setMentionActorMissing(true);
@@ -126,7 +147,11 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     }
 
     setMentionActorMissing(false);
-    onSubmit({ ...(data as TaskFormData), description, notes });
+    onSubmit({
+      ...(data as TaskFormData),
+      description: serializeMentionsForStorage(data.description ?? '', people),
+      notes: serializeMentionsForStorage(data.notes ?? '', people),
+    });
   });
 
   // Live overdue indicator under the Due Date field (display-only; mutates nothing).
@@ -397,7 +422,7 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
       </div>
 
       <div className="flex flex-col items-end gap-1 pt-2">
-        {mentionActorMissing && (
+        {showMentionActorWarning && (
           <p className="text-xs text-red-600" role="alert">
             Please select Current user before saving mentions.
           </p>

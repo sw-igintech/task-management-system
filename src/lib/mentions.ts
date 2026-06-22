@@ -50,6 +50,70 @@ export function extractTaskPersonMentionIds(
   return Array.from(new Set(all));
 }
 
+// Resolves ALL person-mention ids present in EDITABLE textarea text, handling BOTH forms
+// that can appear there:
+//   1. the stored token "@person:<id>"  (e.g. an existing mention not yet re-typed), and
+//   2. the visible "@Name"              (what the user sees/types/picks from autocomplete).
+// It is used by the save guard so a newly added person mention is detected DIRECTLY from
+// the editable text — independent of serializeMentionsForStorage (which is a no-op when
+// `people` is empty and would otherwise let a "@Name" mention slip through unnoticed).
+//
+// Name matching mirrors serializeMentionsForStorage exactly: case-insensitive, anchored at
+// a mention boundary (lookbehind/lookahead reject word-glued "@"), longest name first, and
+// duplicate names resolve to the lowest id. Task references ("@TASK-151", "@151", "@task-12")
+// never resolve to a person because person names are non-numeric and carry no "TASK"/digit
+// match here. Returns deduped ids in first-seen order.
+export function getPersonMentionIdsFromEditableText(
+  text: string | null | undefined,
+  people: Person[],
+): string[] {
+  if (!text) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string | undefined) => {
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  };
+
+  // 1. Stored "@person:<id>" tokens — resolvable without the people list.
+  for (const id of extractPersonMentionIds(text)) add(id);
+
+  // 2. Visible "@Name" tokens — need the people list to map name → id.
+  if (people.length > 0) {
+    const byName = new Map<string, string>();
+    for (const p of [...people].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+      const key = p.name.toLowerCase();
+      if (!byName.has(key)) byName.set(key, p.id);
+    }
+    const alt = [...people]
+      .map(p => p.name)
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp)
+      .join('|');
+    const re = new RegExp(`(?<![A-Za-z0-9_])@(${alt})(?![A-Za-z0-9_])`, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) add(byName.get(m[1].toLowerCase()));
+  }
+
+  return ids;
+}
+
+// Unique person ids mentioned across BOTH editable Description and Notes (deduped union).
+// Editable-text twin of extractTaskPersonMentionIds (which assumes stored "@person:<id>").
+export function getTaskPersonMentionIdsFromEditableText(
+  description: string | null | undefined,
+  notes: string | null | undefined,
+  people: Person[],
+): string[] {
+  const all = [
+    ...getPersonMentionIdsFromEditableText(description, people),
+    ...getPersonMentionIdsFromEditableText(notes, people),
+  ];
+  return Array.from(new Set(all));
+}
+
 // ── Display ⇄ storage conversion for person mentions ─────────────────────────
 // Storage form (in DB):   "@person:<id>"  — stable, rename-safe.
 // Display/edit form (UI): "@Name"         — friendly; never exposes the UUID.
