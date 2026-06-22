@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ClipboardList, LayoutDashboard, Wrench, Database } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, Wrench, Database, User } from 'lucide-react';
 import { useTasks } from './hooks/useTasks';
+import { useCurrentUser } from './hooks/useCurrentUser';
 import { TasksPage } from './pages/TasksPage';
 import { DashboardPage } from './pages/DashboardPage';
 import type { TaskFilters } from './types';
@@ -14,6 +15,9 @@ type Tab = 'tasks' | 'dashboard';
 function AppInner() {
   const [activeTab, setActiveTab] = useState<Tab>('tasks');
   const hookData = useTasks();
+  // Lightweight actor selector (not auth). Stored in localStorage; used as the actor for
+  // mention notification emails. Validated against the loaded people list.
+  const { currentUserId, setCurrentUserId } = useCurrentUser(hookData.people);
 
   const switchToTasksWithFilters = (filters?: Partial<TaskFilters>) => {
     if (filters) {
@@ -62,18 +66,38 @@ function AppInner() {
             </button>
           </nav>
 
-          {/* Backend indicator — Worker API takes precedence over the Mock badge */}
-          {hookData.backend === 'worker' ? (
-            <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1">
-              <Database size={12} />
-              Backend: Worker API
-            </div>
-          ) : hookData.backend === 'mock' ? (
-            <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-              <Database size={12} />
-              Mock Mode (localStorage)
-            </div>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {/* Current user — lightweight actor selector (not authentication). Persisted in
+                localStorage; used as the actor for mention notification emails. */}
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              <User size={13} className="text-gray-400" />
+              <span className="hidden sm:inline">Current user:</span>
+              <select
+                value={currentUserId ?? ''}
+                onChange={e => setCurrentUserId(e.target.value || null)}
+                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                aria-label="Current user"
+              >
+                <option value="">Select user</option>
+                {hookData.people.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Backend indicator — Worker API takes precedence over the Mock badge */}
+            {hookData.backend === 'worker' ? (
+              <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1">
+                <Database size={12} />
+                Backend: Worker API
+              </div>
+            ) : hookData.backend === 'mock' ? (
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                <Database size={12} />
+                Mock Mode (localStorage)
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -84,7 +108,7 @@ function AppInner() {
             <div className="text-gray-400 text-sm">Loading tasks...</div>
           </div>
         ) : activeTab === 'tasks' ? (
-          <TasksPage hookData={hookData} />
+          <TasksPage hookData={hookData} currentUserId={currentUserId} />
         ) : (
           <DashboardPage hookData={hookData} onNavigateToTasks={switchToTasksWithFilters} />
         )}

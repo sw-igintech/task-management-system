@@ -144,17 +144,24 @@ function taskKey(task: TaskRow): string {
   return task.task_number == null ? 'TASK' : `TASK-${task.task_number}`;
 }
 
-// Builds the (English) email for a recipient. `actorName` is the opener/creator name,
-// resolved from opened_by_person_id — the best-available actor, since this API has no
-// authenticated current-user concept (the same opener name is used as the "mentioned by"
-// actor on updates too). Unresolved → assignment shows "Opened by: Unknown"; mention
-// falls back to "Someone mentioned you in a task." Both emails include a deep link that
-// opens the specific task already expanded.
-export function buildEmail(recipient: Recipient, task: TaskRow, actorName: string | null): { subject: string; text: string } {
+// Builds the (English) email for a recipient.
+//   * `actorName`    — who performed THIS action (the Current user / actor_person_id when
+//                      provided; falls back to the opener). Used for the mention line
+//                      "<actor> mentioned you in a task." Unresolved → "Someone ...".
+//   * `openedByName` — who opened/created the task (always from opened_by_person_id).
+//                      Used for the "Opened by:" line. Unresolved → "Unknown".
+// Keeping these separate lets "Matan mentioned you" appear above "Opened by: Amit".
+// Both emails include a deep link that opens the specific task already expanded.
+export function buildEmail(
+  recipient: Recipient,
+  task: TaskRow,
+  actorName: string | null,
+  openedByName: string | null,
+): { subject: string; text: string } {
   const key = taskKey(task);
   const title = task.title ?? '(untitled)';
   const url = buildTaskUrl(task);
-  const openedBy = actorName && actorName.trim() ? actorName.trim() : 'Unknown';
+  const openedBy = openedByName && openedByName.trim() ? openedByName.trim() : 'Unknown';
 
   if (recipient.kind === 'assignment') {
     const status = task.status ? (STATUS_LABELS[task.status] ?? task.status) : STATUS_LABELS.not_started;
@@ -190,8 +197,14 @@ export function buildEmail(recipient: Recipient, task: TaskRow, actorName: strin
 
 // Sends one email via Resend. Returns true on success. Never throws and never logs the
 // API key. Caller guarantees env.RESEND_API_KEY / env.EMAIL_FROM are present.
-async function sendViaResend(env: EmailEnv, recipient: Recipient, task: TaskRow, actorName: string | null): Promise<boolean> {
-  const { subject, text } = buildEmail(recipient, task, actorName);
+async function sendViaResend(
+  env: EmailEnv,
+  recipient: Recipient,
+  task: TaskRow,
+  actorName: string | null,
+  openedByName: string | null,
+): Promise<boolean> {
+  const { subject, text } = buildEmail(recipient, task, actorName, openedByName);
   const payload: Record<string, unknown> = { from: env.EMAIL_FROM, to: [recipient.email], subject, text };
   // Optional Reply-To: include only when configured; sending works fine without it.
   const replyTo = env.EMAIL_REPLY_TO?.trim();
@@ -228,6 +241,7 @@ export async function dispatchEmails(
   recipients: Recipient[],
   task: TaskRow,
   actorName: string | null,
+  openedByName: string | null,
 ): Promise<void> {
   if (recipients.length === 0) return;
 
@@ -242,6 +256,6 @@ export async function dispatchEmails(
 
   // Sequential is fine for the tiny recipient counts here; one failure never aborts others.
   for (const recipient of recipients) {
-    await sendViaResend(env, recipient, task, actorName);
+    await sendViaResend(env, recipient, task, actorName, openedByName);
   }
 }

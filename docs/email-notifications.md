@@ -68,11 +68,37 @@ regex only matches digits. Dated-bullet behaviour in Description/Notes is unchan
 
 ### Helpers
 
-- Frontend: `src/lib/mentions.ts` — `extractPersonMentionIds`, `extractTaskPersonMentionIds`,
-  `getMentionItems`, the display⇄storage trio `renderStoredMentionsForDisplay`,
-  `prepareMentionsForEditing`, `serializeMentionsForStorage`, and `tokenizeMentions`
-  (segments for the blue edit-mode preview).
+- Frontend: `src/lib/mentions.ts` — `extractPersonMentionIds`, `extractTaskPersonMentionIds`
+  (the latter also powers TaskForm's new-mention save gate), `getMentionItems`, and the
+  display⇄storage trio `renderStoredMentionsForDisplay`, `prepareMentionsForEditing`,
+  `serializeMentionsForStorage`.
 - Worker: `worker/src/email.ts` mirrors the extraction (separate package/build).
+
+### Current user selector (lightweight actor — NOT authentication)
+
+A compact **`Current user:`** dropdown sits in the app header (next to the Backend badge).
+It is a lightweight way to say *who is acting* so mention emails name the right person.
+
+- **It is not authentication / access control.** There is no login, no password, no
+  permissions. It only labels the actor of an action. Anyone can change it freely.
+- **Options** come from the existing people list (`/api/people`) — not hardcoded.
+- **Persistence:** the selected person id is stored in `localStorage` under the key
+  **`taskManager.currentUserId`** and restored on the next visit in the same browser. If the
+  stored id no longer matches a known person (e.g. that person was removed) it is **cleared
+  gracefully** and the selector falls back to its `Select user` placeholder.
+- **You can type/select mentions without choosing a Current user.** Saving is blocked
+  **only** when a save adds *newly added* person mentions and no Current user is selected —
+  an inline message *"Please select Current user before saving mentions."* appears next to
+  the Save/Update button (never a modal/popup). Ordinary edits, `@TASK`-only edits, and
+  unchanged existing mentions all save without a Current user.
+- **On the wire:** when a Current user is selected, create/update requests include the
+  optional `actor_person_id` field (see `docs/cloudflare-worker-api.md`). It is the actor of
+  *this request only* — it is **never stored** on the task. The Worker uses it to resolve the
+  mention-email actor, falling back to the opener when absent/unresolved.
+
+Implementation: `src/hooks/useCurrentUser.ts` (state + localStorage), the selector in
+`src/App.tsx`, the save gate in `src/components/TaskForm.tsx`, and the `actor_person_id`
+pass-through in `src/hooks/useTasks.ts` → `src/lib/taskApi.ts`.
 
 ### Overdue indicator (related UI)
 
@@ -191,12 +217,21 @@ Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 
 English status labels: Not Started / In Progress / On Hold / Need to Review / Done.
 
-**Actor / opener source & limitation:** for both create and update, the actor and the
-"Opened by" line are resolved from the task's `opened_by_person_id` (this API has no
-authenticated current-user). So an update made by a different person still shows the
-original opener as the actor. If the opener is missing/unresolved, the assignment email
-shows `Opened by: Unknown` and the mention email falls back to
-`Someone mentioned you in a task.` Documented, by design.
+**Actor vs. opener (Current user selector):** the **actor** ("`<actor>` mentioned you in a
+task.") and the **"Opened by:"** line are now resolved separately:
+
+- **Opened by** — always the task's `opened_by_person_id` (the opener/creator). Unresolved
+  → `Opened by: Unknown`.
+- **Actor** — the person who performed *this* action. Resolved from the optional
+  `actor_person_id` request field (the **Current user** selected in the app header) when it
+  resolves to a known person; otherwise it **falls back to the opener**
+  (`opened_by_person_id`); if neither resolves, the mention email reads
+  `Someone mentioned you in a task.`
+
+So when Matan (Current user) edits a task opened by Amit and mentions Amit, Amit receives
+*"Matan mentioned you in a task."* with *"Opened by: Amit"* — the actor and opener are
+correctly distinct. The **Current user selector is not authentication** (see below); an
+invalid/unknown `actor_person_id` is never rejected — it just falls back to the opener.
 
 When `EMAIL_REPLY_TO` is set, a `reply_to` header (`sw@igintech.com`) is added so replies
 route to the team inbox rather than the no-reply sender.
@@ -220,9 +255,10 @@ opens (logged to console).
 - **Mention dropdown:** both task and person suggestions use blue labels.
 - **Edit mode:** a native `<textarea>` cannot colour only part of its own text, so the raw
   textarea stays plain (preserving typing, bullets, Enter/Shift+Enter, autocomplete, and
-  caret behaviour). A small read-only **Preview** is shown beneath Description/Notes that
-  renders the same text with mentions/task refs in blue (`MentionPreview` +
-  `tokenizeMentions`). This is the documented, low-risk alternative to a textarea overlay.
+  caret behaviour). It shows friendly `@Name` mentions (never the raw `@person:<id>` token).
+  The earlier read-only blue **Preview** block beneath Description/Notes was **removed**
+  (it is intentionally not part of the editor); mentions render blue only in the read-only
+  expanded view.
 
 ---
 

@@ -13,9 +13,12 @@ import { isOverdue, isDueThisWeek, buildTaskQuery, parseTaskParam } from '../lib
 
 interface TasksPageProps {
   hookData: ReturnType<typeof useTasks>;
+  // Selected current user id (actor), or null. Forwarded as actor_person_id on
+  // create/update and used by TaskForm to gate saving newly added person mentions.
+  currentUserId: string | null;
 }
 
-export function TasksPage({ hookData }: TasksPageProps) {
+export function TasksPage({ hookData, currentUserId }: TasksPageProps) {
   const {
     tasks,
     filteredTasks,
@@ -108,7 +111,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
       closed_date: data.closed_date || null,
       notes: data.notes,
       description: data.description,
-    });
+    }, currentUserId);
     setAddModalOpen(false);
   };
 
@@ -124,7 +127,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
       closed_date: data.closed_date || null,
       notes: data.notes,
       description: data.description,
-    });
+    }, currentUserId);
 
   const closeMobileSidebar = () => setMobileSidebarOpen(false);
 
@@ -235,6 +238,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
           getTaskByNumber={getTaskByNumber}
           onTaskReference={handleTaskReference}
           mentionTasks={tasks}
+          currentUserId={currentUserId}
         />
       </div>
 
@@ -249,6 +253,7 @@ export function TasksPage({ hookData }: TasksPageProps) {
           onSubmit={handleAddTask}
           onCancel={() => setAddModalOpen(false)}
           mentionTasks={tasks}
+          currentUserId={currentUserId}
         />
       </Modal>
     </div>

@@ -98,6 +98,11 @@ always succeeds regardless of email state (best-effort, detached send).
 - An "Overdue by X days" indicator shows under Due Date on expanded/edited tasks.
 - **Mention emails are live** (English); assignment emails include an `Opened by:` line and
   name the opener; both link to `…?task=TASK-<number>` which opens that task already expanded.
-- Mentions & task references render **blue** (read-only + dropdown); edit mode shows a
-  blue read-only preview beneath the textarea (native textarea can't colour partial text).
+- A header **`Current user:`** selector (lightweight actor, **not** auth; stored in
+  `localStorage` key `taskManager.currentUserId`) is sent as the optional `actor_person_id`
+  so mention emails name who acted (e.g. *"Matan mentioned you…"*, *"Opened by: Amit"*).
+  Saving **newly added** person mentions requires a Current user (inline prompt by the Save
+  button — no popup); ordinary/@TASK-only edits never require it.
+- Mentions & task references render **blue** (read-only + dropdown); edit mode is a plain
+  textarea showing friendly `@Name` (the earlier blue read-only preview block was removed).
 - Full details: [`email-notifications.md`](email-notifications.md).

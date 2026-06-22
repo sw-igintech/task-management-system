@@ -30,6 +30,9 @@ interface TaskTableProps {
   // Full task list used as the source for @-mention autocomplete (not the filtered
   // view), so a reference can be picked even to a task hidden by current filters.
   mentionTasks: Task[];
+  // Selected current user id (actor), or null — passed to the inline edit form to gate
+  // saving newly added person mentions.
+  currentUserId: string | null;
 }
 
 const columns: ColumnDef<Task>[] = [
@@ -69,6 +72,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
   getTaskByNumber,
   onTaskReference,
   mentionTasks,
+  currentUserId,
 }: TaskTableProps, ref) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -214,6 +218,7 @@ export const TaskTable = forwardRef<TaskTableHandle, TaskTableProps>(function Ta
                 getTaskByNumber={getTaskByNumber}
                 onTaskReference={onTaskReference}
                 mentionTasks={mentionTasks}
+                currentUserId={currentUserId}
                 rowIndex={idx}
               />
             ))}

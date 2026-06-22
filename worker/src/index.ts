@@ -94,34 +94,62 @@ async function loadPeopleById(env: Env): Promise<Map<string, PersonRow>> {
   return new Map(results.map(p => [p.id, p]));
 }
 
-// Best-available actor name for a task: the opener/creator (there is no current-user
-// concept on this API). Returns null when unresolved → emails show "Unknown" / "Someone".
-function actorNameFor(task: TaskRow, peopleById: Map<string, PersonRow>): string | null {
-  const id = task.opened_by_person_id;
-  return id ? (peopleById.get(id)?.name ?? null) : null;
+// Resolves a person id to a name, or null when missing/unresolved.
+function nameOf(personId: string | null | undefined, peopleById: Map<string, PersonRow>): string | null {
+  return personId ? (peopleById.get(personId)?.name ?? null) : null;
 }
 
-async function scheduleCreateNotifications(env: Env, task: TaskRow): Promise<void> {
+// Actor for THIS action ("<actor> mentioned you in a task."). Prefers the request-supplied
+// actor_person_id (the Current user) when it resolves to a known person; otherwise falls
+// back to the opener (opened_by_person_id). An unresolved/invalid actor id is handled
+// safely by this fallback — the request is never rejected for it. Returns null when nothing
+// resolves → the mention email reads "Someone mentioned you in a task."
+function actorNameFor(
+  actorPersonId: string | null | undefined,
+  task: TaskRow,
+  peopleById: Map<string, PersonRow>,
+): string | null {
+  return nameOf(actorPersonId, peopleById) ?? nameOf(task.opened_by_person_id, peopleById);
+}
+
+// "Opened by:" line — always the opener (opened_by_person_id), independent of the actor.
+function openedByNameFor(task: TaskRow, peopleById: Map<string, PersonRow>): string | null {
+  return nameOf(task.opened_by_person_id, peopleById);
+}
+
+async function scheduleCreateNotifications(env: Env, task: TaskRow, actorPersonId: string | null): Promise<void> {
   try {
     if (env.EMAIL_ENABLED !== 'true') {
       console.log('[email] skipped (EMAIL_ENABLED is not "true"): task created');
       return;
     }
     const peopleById = await loadPeopleById(env);
-    await dispatchEmails(env, computeCreateRecipients(task, peopleById), task, actorNameFor(task, peopleById));
+    await dispatchEmails(
+      env,
+      computeCreateRecipients(task, peopleById),
+      task,
+      actorNameFor(actorPersonId, task, peopleById),
+      openedByNameFor(task, peopleById),
+    );
   } catch (err) {
     console.warn('[email] create-notification error:', err instanceof Error ? err.message : String(err));
   }
 }
 
-async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: TaskRow): Promise<void> {
+async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: TaskRow, actorPersonId: string | null): Promise<void> {
   try {
     if (env.EMAIL_ENABLED !== 'true') {
       console.log('[email] skipped (EMAIL_ENABLED is not "true"): task updated');
       return;
     }
     const peopleById = await loadPeopleById(env);
-    await dispatchEmails(env, computeUpdateRecipients(oldTask, newTask, peopleById), newTask, actorNameFor(newTask, peopleById));
+    await dispatchEmails(
+      env,
+      computeUpdateRecipients(oldTask, newTask, peopleById),
+      newTask,
+      actorNameFor(actorPersonId, newTask, peopleById),
+      openedByNameFor(newTask, peopleById),
+    );
   } catch (err) {
     console.warn('[email] update-notification error:', err instanceof Error ? err.message : String(err));
   }
@@ -140,6 +168,20 @@ function normPersonId(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'string') return value;
   throw new Error(`${field} must be a string id or null`);
+}
+
+// Pulls the optional `actor_person_id` out of a request body and REMOVES it, so the task
+// field whitelist never sees it (it is the actor of this action, not a task column — it is
+// never stored). Returns the id string, or null when absent/empty. A non-string value is a
+// client error (400). An id that doesn't match a real person is NOT rejected here — it is
+// resolved safely at email time (falls back to the opener).
+function extractActorPersonId(body: Record<string, unknown>): string | null {
+  if (!('actor_person_id' in body)) return null;
+  const value = body.actor_person_id;
+  delete body.actor_person_id;
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') throw new Error('actor_person_id must be a string id or null');
+  return value;
 }
 
 function rejectUnknownFields(body: Record<string, unknown>, allowed: readonly string[]): void {
@@ -220,7 +262,7 @@ async function createPerson(env: Env, body: Record<string, unknown>, origin: str
   return jsonResponse(row, 201, origin);
 }
 
-async function createTask(env: Env, body: Record<string, unknown>, origin: string | null, ctx: ExecutionContext): Promise<Response> {
+async function createTask(env: Env, body: Record<string, unknown>, actorPersonId: string | null, origin: string | null, ctx: ExecutionContext): Promise<Response> {
   const p = buildTaskPayload(body, true);
   // Next task_number = max + 1. Racy under concurrency — fine for staging/internal use;
   // production would need a sequence/atomic counter.
@@ -257,12 +299,12 @@ async function createTask(env: Env, body: Record<string, unknown>, origin: strin
 
   // Notify (responsible assignment + mentions) detached from the response. Safe no-op
   // when email is disabled; never affects the 201 just produced.
-  if (row) ctx.waitUntil(scheduleCreateNotifications(env, row as TaskRow));
+  if (row) ctx.waitUntil(scheduleCreateNotifications(env, row as TaskRow, actorPersonId));
 
   return jsonResponse(mapTaskRow(row), 201, origin);
 }
 
-async function patchTask(env: Env, id: string, payload: Record<string, unknown>, origin: string | null, ctx: ExecutionContext): Promise<Response> {
+async function patchTask(env: Env, id: string, payload: Record<string, unknown>, actorPersonId: string | null, origin: string | null, ctx: ExecutionContext): Promise<Response> {
   if (Object.keys(payload).length === 0) {
     return errorResponse('No editable fields supplied', 400, origin);
   }
@@ -297,7 +339,7 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
   // Notify only the NEW responsible person (if changed) and NEWLY mentioned people.
   // Detached; safe no-op when email is disabled.
   if (oldRow) {
-    ctx.waitUntil(scheduleUpdateNotifications(env, oldRow as TaskRow, row as TaskRow));
+    ctx.waitUntil(scheduleUpdateNotifications(env, oldRow as TaskRow, row as TaskRow, actorPersonId));
   }
 
   return jsonResponse(mapTaskRow(row), 200, origin);
@@ -345,22 +387,28 @@ export default {
             const activeOnly = ia === 'false' || ia === '0';
             return await listTasks(env, activeOnly, origin);
           }
-          if (method === 'POST') return await createTask(env, await parseJsonBody(request), origin, ctx);
+          if (method === 'POST') {
+            const body = await parseJsonBody(request);
+            const actorPersonId = extractActorPersonId(body);
+            return await createTask(env, body, actorPersonId, origin, ctx);
+          }
           return errorResponse('Method Not Allowed', 405, origin);
         }
         const id = parts[2];
         // /api/tasks/:id
         if (parts.length === 3) {
           if (method === 'PATCH') {
-            const payload = buildTaskPayload(await parseJsonBody(request), false);
-            return await patchTask(env, id, payload, origin, ctx);
+            const body = await parseJsonBody(request);
+            const actorPersonId = extractActorPersonId(body);
+            const payload = buildTaskPayload(body, false);
+            return await patchTask(env, id, payload, actorPersonId, origin, ctx);
           }
           return errorResponse('Method Not Allowed', 405, origin);
         }
-        // /api/tasks/:id/archive | /api/tasks/:id/restore
+        // /api/tasks/:id/archive | /api/tasks/:id/restore — no actor (no mention change).
         if (parts.length === 4 && method === 'POST') {
-          if (parts[3] === 'archive') return await patchTask(env, id, { archived: true }, origin, ctx);
-          if (parts[3] === 'restore') return await patchTask(env, id, { archived: false }, origin, ctx);
+          if (parts[3] === 'archive') return await patchTask(env, id, { archived: true }, null, origin, ctx);
+          if (parts[3] === 'restore') return await patchTask(env, id, { archived: false }, null, origin, ctx);
         }
         return errorResponse('Not Found', 404, origin);
       }
