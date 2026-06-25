@@ -54,8 +54,35 @@ Supabase is no longer in the runtime path for this Worker. API base URL:
 | PATCH | `/api/tasks/:id` | updated task | 200 |
 | POST | `/api/tasks/:id/archive` | updated task (`archived=true`) | 200 |
 | POST | `/api/tasks/:id/restore` | updated task (`archived=false`) | 200 |
+| GET | `/api/mentions?person_id=<id>&status=unread` | unread mentions for that person (newest first) | 200 |
+| GET | `/api/mentions/count?person_id=<id>` | `{ count }` unread count | 200 |
+| POST/PATCH | `/api/mentions/:id/open` | `{ ok: true }` — marks the mention opened/read | 200 |
 
 **No `DELETE`** — the app uses soft archive only; hard delete is intentionally not exposed.
+
+### My Mentions endpoints (in-app inbox)
+
+These back the **My Mentions** inbox (header `@` icon). Identity is the `person_id` param,
+sourced from the app's **Current user** selector — a **lightweight workflow identity, NOT
+auth**: any `person_id` is accepted (accepted limitation of the no-auth design).
+
+- `GET /api/mentions?person_id=<id>&status=unread` — returns unread mentions
+  (`opened_at IS NULL`) for that person, **newest first**. Each item includes: `id`, `task_id`,
+  `task_number`, `task_title`, `task_archived` (boolean), `mentioned_person_id`,
+  `actor_person_id`, `actor_name`, `snippet`, `source`, `created_at`, `opened_at`. The frontend
+  builds the deep link from `task_number` (`?task=TASK-<n>`). `status=all` returns read+unread;
+  default is unread. `person_id` is required (else `400`).
+- `GET /api/mentions/count?person_id=<id>` — `{ "count": <n> }` of unread mentions.
+- `POST` (or `PATCH`) `/api/mentions/:id/open` — body `{ "person_id": "<id>" }`. Marks
+  `opened_at` and returns `{ ok: true }`. **Idempotent** — already-opened returns
+  `{ ok: true, alreadyOpened: true }`. `person_id` **must equal** the row's
+  `mentioned_person_id`, else `403` (one person can't open another's mention). Missing
+  `person_id` → `400`; unknown id → `404`.
+
+Rows are created by the Worker on task create/update for newly mentioned people (detached, never
+blocks the response, independent of `EMAIL_ENABLED`). Requires the `mention_notifications` table
+(`d1/migrations/2026-06-25_add_mention_notifications.sql`) — see
+[`docs/email-notifications.md`](email-notifications.md) (§2a) and [`docs/d1-migration.md`](d1-migration.md).
 
 Response shapes are the D1 rows — the same snake_case columns the frontend already reads
 (`id`, `task_number`, `title`, `description`, `notes`, `status`, `priority`,

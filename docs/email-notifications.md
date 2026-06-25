@@ -132,7 +132,7 @@ Display-only — it mutates no data.
 | Task created mentioning people | each mentioned person (if they have an email) | mention (incl. actor name) |
 | Task updated, responsible person **changed** | the **new** responsible person | assignment |
 | Task updated with **new** mentions | only the **newly** mentioned people | mention |
-| Task updated, **Description or Notes changed** | the responsible person (if they have an email) | **update** (incl. actor name + changed fields) |
+| Task updated, **Description or Notes changed** | the responsible person (if they have an email) | **update** (incl. actor name, changed fields, **and the added text** / Before-After fallback) |
 
 Archive/restore send **no** email (no responsible/mention/Description/Notes change). Mention
 emails are **live**: anyone mentioned in Description or Notes with an email on file is notified.
@@ -235,7 +235,8 @@ Opened by: <opened_by name, or "Unknown">
 Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```
 
-**Update (Description/Notes changed)** — to the responsible person:
+**Update (Description/Notes changed)** — to the responsible person. The email now includes
+**what was added/changed** (Jira-style), not just which field changed:
 ```
 Subject: Task updated: TASK-<number> - <title>
 
@@ -246,10 +247,42 @@ Hi <recipient name>,
 Task: TASK-<number> - <title>
 Opened by: <opened_by name, or "Unknown">
 Updated by: <actor name, or "Someone">
-Changed fields: Description / Notes   (only whichever actually changed)
+Changed fields: Notes            (comma-separated; only whichever actually changed)
+
+Added to Notes:
+<the added text>
 
 Open task: https://task-management-system-3nm.pages.dev?task=TASK-<number>
 ```
+
+When **both** Description and Notes changed it is still **one** email, with an `Added to
+Description:` section followed by an `Added to Notes:` section (in that order).
+
+**Added-text detection rules** (`computeFieldChange` in `worker/src/email.ts`):
+
+- Old text **empty**, new has content → the whole new text is the added text.
+- New text **starts with** the old text (the common append / dated-bullet case) → added text
+  is `newText.slice(oldText.length).trim()`.
+- Otherwise (a **middle edit or deletion**) → the added text can't be confidently isolated, so
+  the email uses a concise **Before/After** fallback instead:
+  ```
+  Description changed.
+
+  Before:
+  <old description, trimmed>
+
+  After:
+  <new description, trimmed>
+  ```
+- Only CRLF↔LF is normalised (so a pure line-ending change isn't treated as content, and prefix
+  detection is reliable). No update email is sent if Description/Notes did not actually change.
+
+**Trimming / mention rendering in the added text:**
+
+- Each field's added/Before/After text is capped at **2000 characters**; longer content is cut
+  and marked with a trailing `... [trimmed]`. Line breaks within the kept portion are preserved.
+- Stored `@person:<id>` tokens in the added text are rendered as friendly **`@Name`** (an
+  unresolved id → `@unknown`). `@TASK-123` references are left untouched and stay readable.
 
 English status labels: Not Started / In Progress / On Hold / Need to Review / Done.
 
@@ -297,6 +330,87 @@ opens (logged to console).
   expanded view.
 
 ---
+
+## 2a. My Mentions inbox (in-app, persisted)
+
+The **My Mentions** inbox lets a person see who mentioned them and jump to the task — even if
+they missed (or never get) the email. It is **separate from email** and works regardless of
+`EMAIL_ENABLED` or whether the mentioned person has an email address.
+
+### Identity (lightweight, NOT auth)
+
+My Mentions uses the existing **Current user** selector as the identity. **It is not
+authentication** — there is no login and anyone can change the Current user. It is a
+*lightweight workflow identity* only; the `/api/mentions` endpoints accept a `person_id` and
+trust it. This is an accepted limitation of the no-auth design (see *Security* below).
+
+### Data model — `mention_notifications`
+
+Unread mentions are **not** computed from current task text; an event row is **persisted in
+D1** at the moment a mention is introduced. Table (`d1/schema.sql` +
+`d1/migrations/2026-06-25_add_mention_notifications.sql`):
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `task_id` | TEXT NOT NULL | tasks.id (UUID) |
+| `task_number` | INTEGER NOT NULL | tasks.task_number (for the deep link / display) |
+| `mentioned_person_id` | TEXT NOT NULL | who was mentioned (people.id) |
+| `actor_person_id` | TEXT | who mentioned them (the Current user / actor; may be NULL) |
+| `created_at` | TEXT NOT NULL | ISO timestamp |
+| `opened_at` | TEXT | NULL = **unread**; set when opened/read |
+| `source` | TEXT NOT NULL DEFAULT 'mention' | reserved for future sources |
+| `snippet` | TEXT | the line/bullet where the person was mentioned, `@Name`-rendered, trimmed |
+
+Indexed on `(mentioned_person_id, opened_at, created_at)`, `task_id`, and `actor_person_id`.
+
+### When rows are created (Worker)
+
+On `POST /api/tasks` and `PATCH /api/tasks/:id`, for each **newly** mentioned person the Worker
+inserts one row (detached via `ctx.waitUntil`, never blocking the response):
+
+- **Create** → every person mentioned in Description/Notes.
+- **Update** → only people mentioned **now but not before** the edit (unchanged existing
+  mentions create no row). A person mentioned in both Description and Notes in the same save
+  gets **one** row. `@TASK` references never create rows. **Archive/restore create no rows**
+  (they don't touch Description/Notes).
+- Row creation is **independent of email**: it happens even when `EMAIL_ENABLED="false"` and
+  even if the mentioned person has no email. If an email send fails, the row is still created.
+  If a row insert fails (e.g. the migration isn't applied yet), it is logged and **the task
+  create/update still succeeds** (non-blocking, fail-graceful).
+
+### API (see `docs/cloudflare-worker-api.md` for full details)
+
+- `GET /api/mentions?person_id=<id>&status=unread` — unread mentions for that person, newest
+  first, with joined task title, archived flag, and actor name. (`status=all` returns read+unread.)
+- `GET /api/mentions/count?person_id=<id>` — unread count.
+- `POST /api/mentions/:id/open` body `{ "person_id": "<id>" }` — marks `opened_at` (idempotent).
+  `person_id` must equal the row's `mentioned_person_id`, else **403** — one person can't mark
+  another's mention read.
+
+### Read semantics
+
+Unread/read is stored in D1 via `opened_at`, **not** browser-local. Opening a mention in one
+browser marks it read globally for that Current user. Opening a mention **navigates to the
+task** using the same `?task=TASK-<n>` deep link as email links / `@TASK` references, then the
+item disappears from the unread list.
+
+### UI — icon-only `@` button
+
+A **compact icon-only `@` button** sits in the app header (next to the Current user selector),
+social-app style — tooltip/aria-label **"My Mentions"**, with a small unread-count **badge**
+when count > 0. It is **not** a large text tab. Clicking opens the **My Mentions** view (a
+panel inside the app, not a modal/popup). With **no Current user** selected, the view shows the
+inline empty state *"Select Current user to view your mentions."* and the header Current-user
+cue lights — it never shows another person's data.
+
+> The future general **Activity/Notifications bell** is intentionally **not** implemented here
+> — only the My Mentions `@` icon. No general Activity Log was added.
+
+Implementation: `worker/src/index.ts` (`/api/mentions*` + row inserts),
+`worker/src/email.ts` (`newlyMentionedOnUpdate`/`newlyMentionedOnCreate`/`mentionSnippet`),
+`src/hooks/useMentions.ts`, `src/pages/MentionsPage.tsx`, the `@` button in `src/App.tsx`, and
+`src/lib/taskApi.ts` (`getMentions`/`markMentionOpened`).
 
 ## 3. People email addresses (`people.email`)
 

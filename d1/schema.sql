@@ -44,3 +44,26 @@ CREATE INDEX IF NOT EXISTS idx_tasks_archived             ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date             ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_closed_date          ON tasks(closed_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_import_hash          ON tasks(import_hash);
+
+-- Mention notifications backing the "My Mentions" inbox. One row per NEW person mention
+-- introduced by a task create/update. Unread = opened_at IS NULL. Identity comes from the
+-- lightweight "Current user" selector (NOT authentication). See d1/migrations/
+-- 2026-06-25_add_mention_notifications.sql and docs/email-notifications.md.
+CREATE TABLE IF NOT EXISTS mention_notifications (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id              TEXT NOT NULL,
+  task_number          INTEGER NOT NULL,
+  mentioned_person_id  TEXT NOT NULL,
+  actor_person_id      TEXT,
+  created_at           TEXT NOT NULL,
+  opened_at            TEXT,
+  source               TEXT NOT NULL DEFAULT 'mention',
+  snippet              TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_mention_notifications_person_unread
+  ON mention_notifications(mentioned_person_id, opened_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_mention_notifications_task
+  ON mention_notifications(task_id);
+CREATE INDEX IF NOT EXISTS idx_mention_notifications_actor
+  ON mention_notifications(actor_person_id);

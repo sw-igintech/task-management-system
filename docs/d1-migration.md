@@ -63,6 +63,17 @@ deletes data** — it only applies additive DDL.
 - `2026-06-18_add_people_email.sql` — adds the optional `people.email` column backing the
   (default-disabled) email-notification feature. `people.email` is also already declared in
   `d1/schema.sql`, so any DB created from the current schema already has it.
+- `2026-06-25_add_mention_notifications.sql` — adds the **`mention_notifications`** table (+ 3
+  indexes) backing the **My Mentions** inbox. Additive and non-destructive; uses
+  `CREATE TABLE/INDEX IF NOT EXISTS`, so re-applying it is a **safe no-op** (no "duplicate
+  column" concern — it creates a new table, not a column). The table is also declared in
+  `d1/schema.sql`. **Apply to production before merging** the code that reads/writes it (the
+  app degrades gracefully if it's missing — mentions just don't persist and the `@` badge
+  stays empty — but the inbox is non-functional until applied). Manual equivalent:
+  ```bash
+  npx wrangler d1 execute task-management-production --remote \
+    --file=d1/migrations/2026-06-25_add_mention_notifications.sql
+  ```
 - SQLite `ALTER TABLE ... ADD COLUMN` has **no `IF NOT EXISTS`**, so re-applying an
   already-present column fails with *"duplicate column name"*. The workflow treats that
   exact error as a **safe no-op** (and fails on any other error), then verifies via

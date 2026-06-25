@@ -23,6 +23,14 @@ A complete task management system for the engineering team, built with Vite + Re
 - **Current user** selector in the header (lightweight actor, **not** authentication) — stored
   in `localStorage`; sent as the optional `actor_person_id` so mention emails name who acted
   ("Matan mentioned you…"); saving newly added mentions requires it (inline prompt, no popup)
+- **Update emails include the added text** — when Description/Notes change, the "task updated"
+  email shows the actual added text (`Added to Notes: …`), with a Before/After fallback for
+  mid-text edits; `@person:<id>` tokens render as `@Name` (see `docs/email-notifications.md`)
+- **My Mentions inbox** — a compact icon-only `@` button in the header (with an unread badge)
+  opens a list of unread mentions for the selected Current user; clicking one marks it read
+  (persisted in D1) and opens the task. Identity is the Current user (lightweight, **not**
+  auth). The future Activity/Notifications **bell is not** implemented. Requires the
+  `mention_notifications` D1 migration (see `docs/d1-migration.md`)
 
 ## Quick Start
 

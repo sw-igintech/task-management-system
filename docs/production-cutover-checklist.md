@@ -105,4 +105,14 @@ always succeeds regardless of email state (best-effort, detached send).
   button — no popup); ordinary/@TASK-only edits never require it.
 - Mentions & task references render **blue** (read-only + dropdown); edit mode is a plain
   textarea showing friendly `@Name` (the earlier blue read-only preview block was removed).
+- **Update emails include the added Description/Notes text** (Before/After fallback for
+  mid-text edits); see [`email-notifications.md`](email-notifications.md).
+- **My Mentions inbox** — header icon-only `@` button (unread badge) lists unread mentions for
+  the Current user; opening one marks it read (D1) and opens the task. Identity = Current user
+  (lightweight, **not** auth). The future Activity/Notifications **bell is not** implemented.
+  - ⚠️ **Manual D1 step:** apply `d1/migrations/2026-06-25_add_mention_notifications.sql` to
+    **production** (via the **D1 Apply Migrations** workflow → `production`, or
+    `npx wrangler d1 execute task-management-production --remote --file=…`) **before/around
+    merge**. Until applied, mentions don't persist and the `@` badge stays empty, but task
+    create/update still succeeds (fail-graceful).
 - Full details: [`email-notifications.md`](email-notifications.md).

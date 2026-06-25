@@ -6,7 +6,7 @@
 // the public Worker endpoints over plain JSON. The service-role key lives only inside
 // the Worker, never here.
 
-import type { Task, Person } from '../types';
+import type { Task, Person, MentionNotification } from '../types';
 
 // Trailing slashes stripped so `${base}/api/...` is always well-formed.
 export const WORKER_API_URL = (import.meta.env.VITE_WORKER_API_URL || '').replace(/\/+$/, '');
@@ -46,5 +46,14 @@ export const taskApi = {
     request<Person>('/api/people', {
       method: 'POST',
       body: JSON.stringify(email !== undefined ? { name, email } : { name }),
+    }),
+  // My Mentions inbox. `personId` is the Current user (lightweight identity, not auth).
+  getMentions: (personId: string) =>
+    request<MentionNotification[]>(`/api/mentions?person_id=${encodeURIComponent(personId)}`),
+  // Marks one mention opened/read; person_id must match the row's mentioned person.
+  markMentionOpened: (id: number, personId: string) =>
+    request<{ ok: boolean }>(`/api/mentions/${id}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ person_id: personId }),
     }),
 };
