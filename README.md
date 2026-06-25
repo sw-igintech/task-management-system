@@ -36,7 +36,10 @@ A complete task management system for the engineering team, built with Vite + Re
   (person/actor, event type, date range, text search). Distinct from My Mentions — Activity is
   a read-only history (no unread/read state); My Mentions is the actionable unread inbox.
   Identity is the Current user (lightweight, **not** auth / not an audit-security log).
-  Requires the `activity_events` D1 migration (see `docs/d1-migration.md`)
+  Requires the `activity_events` D1 migration (see `docs/d1-migration.md`). Dates display as
+  **dd/mm/yy · HH:mm** (24-hour). **Retention:** only the latest **50** events per person are
+  kept (older rows are pruned automatically after each insert; per `target_person_id`, not
+  global). See [`docs/session-handoff.md`](docs/session-handoff.md) for current state.
 - **Header navigation** — clicking the **Engineering Task Manager** brand/logo returns to the
   Tasks page; the `@` (My Mentions) and bell (Activity) icons form a consistent header action group
 

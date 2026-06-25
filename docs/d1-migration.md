@@ -84,6 +84,13 @@ deletes data** — it only applies additive DDL.
   npx wrangler d1 execute task-management-production --remote \
     --file=d1/migrations/2026-06-26_add_activity_events.sql
   ```
+  - **Activity retention (latest 50 per user) needs NO migration.** It is enforced in Worker
+    code (`pruneActivityEventsForTarget`), which runs a `DELETE … WHERE target_person_id = ?
+    AND id NOT IN (… ORDER BY created_at DESC, id DESC LIMIT 50)` after each insert. No schema
+    or index change. It prunes **only** `activity_events` for the affected `target_person_id`
+    (never other users, never `mention_notifications`, tasks, or email data); `NULL` targets
+    are skipped. Existing production rows beyond 50/user are not bulk-deleted by a migration —
+    they converge to ≤50 as each user accrues new activity. **No D1 import is involved.**
 - SQLite `ALTER TABLE ... ADD COLUMN` has **no `IF NOT EXISTS`**, so re-applying an
   already-present column fails with *"duplicate column name"*. The workflow treats that
   exact error as a **safe no-op** (and fails on any other error), then verifies via

@@ -125,4 +125,9 @@ always succeeds regardless of email state (best-effort, detached send).
     **production** (same mechanism as above) **before/around merge**. Until applied, Activity
     rows don't persist and the Activity view shows "No activity yet", but task create/update
     still succeeds (fail-graceful).
-- Full details: [`email-notifications.md`](email-notifications.md), [`cloudflare-worker-api.md`](cloudflare-worker-api.md).
+  - **Retention (latest 50/user)** and **dd/mm/yy · HH:mm date display** were added 2026-06-25
+    (PR #14). Retention is Worker-code-only (`pruneActivityEventsForTarget`, per
+    `target_person_id`, prunes after each insert) — **no migration, no D1 import**. Date format
+    is presentation-only (`worker`/D1 timestamps unchanged). Verify in production: Activity
+    items show `dd/mm/yy · HH:mm`, and a user accruing >50 events stays at 50.
+- Full details: [`email-notifications.md`](email-notifications.md), [`cloudflare-worker-api.md`](cloudflare-worker-api.md), [`session-handoff.md`](session-handoff.md).

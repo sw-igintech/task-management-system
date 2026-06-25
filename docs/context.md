@@ -3,6 +3,9 @@
 > Project documentation and context for future development sessions.
 > Read this before making changes to understand the full project history and state.
 > (This file replaces the old `claude/context.md`. The `claude/` folder no longer exists.)
+>
+> **For a concise current-state snapshot (production architecture, features, Activity
+> retention, date format, what to check first), read [`session-handoff.md`](session-handoff.md).**
 
 ---
 

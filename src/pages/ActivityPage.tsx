@@ -34,9 +34,11 @@ const EVENT_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   EVENT_TYPE_OPTIONS.filter(o => o.value).map(o => [o.value, o.label]),
 );
 
+// Activity timestamps are shown in compact dd/MM/yy with 24-hour time, e.g.
+// "25/06/26 · 17:53". Presentation only — the stored D1 timestamps are unchanged.
 function formatTime(iso: string): string {
   try {
-    return format(parseISO(iso), "MMM d, yyyy '•' h:mm a");
+    return format(parseISO(iso), "dd/MM/yy '·' HH:mm");
   } catch {
     return iso;
   }
@@ -113,8 +115,11 @@ export function ActivityPage({ events, loading, currentUserId, people, filters, 
                 {EVENT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
+            {/* Native date inputs render their own locale-formatted value/placeholder, which
+                the page cannot override. The app-controlled label notes the intended dd/mm/yy
+                order for clarity. */}
             <label className="flex flex-col gap-0.5 text-[11px] text-gray-500">
-              From
+              From (dd/mm/yy)
               <input
                 type="date"
                 value={filters.from ?? ''}
@@ -123,7 +128,7 @@ export function ActivityPage({ events, loading, currentUserId, people, filters, 
               />
             </label>
             <label className="flex flex-col gap-0.5 text-[11px] text-gray-500">
-              To
+              To (dd/mm/yy)
               <input
                 type="date"
                 value={filters.to ?? ''}

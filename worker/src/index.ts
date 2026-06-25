@@ -212,6 +212,39 @@ async function scheduleMentionNotifications(
 // via ctx.waitUntil), and must not affect the task mutation's success. If the table doesn't
 // exist yet (migration not applied), each insert fails and is logged, but the task op already
 // succeeded.
+// Per-user retention: keep only the newest N activity_events rows per target person.
+const ACTIVITY_RETENTION_PER_TARGET = 50;
+
+// Deletes all but the newest ACTIVITY_RETENTION_PER_TARGET rows for ONE target person
+// (newest by created_at DESC, id DESC tie-breaker). Best-effort: logs and swallows errors so
+// it never breaks a task mutation. Retention is keyed on target_person_id (the person the
+// feed is FOR) — NOT actor_person_id. A null/empty target is skipped (never pruned), and it
+// touches ONLY activity_events for THIS target — never other users, mention_notifications,
+// tasks, or email data.
+async function pruneActivityEventsForTarget(env: Env, targetPersonId: string | null | undefined): Promise<void> {
+  if (!targetPersonId) return;
+  try {
+    await env.DB
+      .prepare(
+        `DELETE FROM activity_events
+          WHERE target_person_id = ?
+            AND id NOT IN (
+              SELECT id FROM activity_events
+               WHERE target_person_id = ?
+               ORDER BY created_at DESC, id DESC
+               LIMIT ${ACTIVITY_RETENTION_PER_TARGET}
+            )`,
+      )
+      .bind(targetPersonId, targetPersonId)
+      .run();
+  } catch (err) {
+    console.warn(
+      `[activity] prune failed for target ${targetPersonId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 async function insertActivityEvents(env: Env, events: PendingActivity[]): Promise<void> {
   if (events.length === 0) return;
   const now = new Date().toISOString();
@@ -240,6 +273,15 @@ async function insertActivityEvents(env: Env, events: PendingActivity[]): Promis
         err instanceof Error ? err.message : String(err),
       );
     }
+  }
+
+  // After inserting, prune each AFFECTED target person ONCE so only the newest 50 remain.
+  const targets = new Set<string>();
+  for (const ev of events) {
+    if (ev.target_person_id) targets.add(ev.target_person_id);
+  }
+  for (const targetPersonId of targets) {
+    await pruneActivityEventsForTarget(env, targetPersonId);
   }
 }
 
