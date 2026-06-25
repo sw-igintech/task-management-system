@@ -127,6 +127,28 @@ never blocks the response, **independent of `EMAIL_ENABLED`**, fail-graceful). R
 `activity_events` table (`d1/migrations/2026-06-26_add_activity_events.sql`) — see
 [`docs/d1-migration.md`](d1-migration.md).
 
+**Retention (per user, latest 50):** after inserting activity rows, the Worker prunes each
+affected `target_person_id` so only the newest **50** rows remain for that person
+(`pruneActivityEventsForTarget` in `worker/src/index.ts`). Newest is `created_at DESC, id DESC`.
+Prune is **per `target_person_id`** (NOT `actor_person_id`), best-effort (logged, never breaks
+the task mutation), skips `NULL`/empty targets, and touches **only** `activity_events` — never
+other users' rows, `mention_notifications`, tasks, or email data. No migration is required (no
+schema change). The list API still defaults `limit=50` (max 200), so effective stored history
+per user is now 50. SQL:
+```sql
+DELETE FROM activity_events
+ WHERE target_person_id = ?
+   AND id NOT IN (
+     SELECT id FROM activity_events
+      WHERE target_person_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 50
+   );
+```
+
+**Date display:** Activity timestamps render in the frontend as `dd/mm/yy · HH:mm` (24-hour);
+stored timestamps in D1 are unchanged.
+
 Response shapes are the D1 rows — the same snake_case columns the frontend already reads
 (`id`, `task_number`, `title`, `description`, `notes`, `status`, `priority`,
 `responsible_person_id`, `opened_by_person_id`, `due_date`, `closed_date`, `archived`,
