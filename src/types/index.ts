@@ -51,3 +51,23 @@ export interface TaskFilters {
 
 export type SortField = 'task_number' | 'due_date' | 'closed_date' | 'priority' | 'responsible_person' | 'status' | 'updated_at' | 'title';
 export type SortDirection = 'asc' | 'desc';
+
+// A persisted "My Mentions" notification row (one per NEW person mention introduced by a
+// task create/update). Identity is the lightweight "Current user" selector — NOT auth.
+// Shape mirrors the Worker's GET /api/mentions response (joined task title + actor name).
+export interface MentionNotification {
+  id: number;
+  task_id: string;
+  task_number: number;
+  mentioned_person_id: string;
+  actor_person_id: string | null;
+  // Resolved name of who performed the mention (null when unresolved → "Someone").
+  actor_name: string | null;
+  // Joined task title / archived state (task may have been archived since the mention).
+  task_title: string | null;
+  task_archived: boolean;
+  snippet: string | null;
+  source: string;
+  created_at: string;
+  opened_at: string | null;
+}

@@ -20,6 +20,9 @@ import {
   computeCreateRecipients,
   computeUpdateRecipients,
   dispatchEmails,
+  mentionSnippet,
+  newlyMentionedOnCreate,
+  newlyMentionedOnUpdate,
 } from './email';
 
 export interface Env extends EmailEnv {
@@ -152,6 +155,48 @@ async function scheduleUpdateNotifications(env: Env, oldTask: TaskRow, newTask: 
     );
   } catch (err) {
     console.warn('[email] update-notification error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+// ── My Mentions notifications (best-effort, INDEPENDENT of email config) ─────
+// Persists one mention_notifications row per NEWLY mentioned person on create/update so the
+// "My Mentions" inbox can surface unread mentions. Unlike email, this runs regardless of
+// EMAIL_ENABLED and regardless of whether the mentioned person has an email address — it is
+// an in-app workflow feature. It NEVER throws (run via ctx.waitUntil) and must not affect the
+// task mutation's success. If the table doesn't exist yet (migration not applied), each
+// insert fails and is logged, but the task op already succeeded.
+async function scheduleMentionNotifications(
+  env: Env,
+  taskId: string,
+  task: TaskRow,
+  mentionedIds: string[],
+  actorPersonId: string | null,
+): Promise<void> {
+  try {
+    if (mentionedIds.length === 0) return;
+    if (task.task_number == null) return; // task_number is required by the table; tasks always have one
+    const peopleById = await loadPeopleById(env);
+    const now = new Date().toISOString();
+    for (const personId of mentionedIds) {
+      const snippet = mentionSnippet(task, personId, peopleById);
+      try {
+        await env.DB
+          .prepare(
+            `INSERT INTO mention_notifications
+               (task_id, task_number, mentioned_person_id, actor_person_id, created_at, opened_at, source, snippet)
+             VALUES (?, ?, ?, ?, ?, NULL, 'mention', ?)`,
+          )
+          .bind(taskId, task.task_number, personId, actorPersonId, now, snippet)
+          .run();
+      } catch (err) {
+        console.warn(
+          `[mentions] failed to insert notification (task ${task.task_number}, person ${personId}):`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('[mentions] notification scheduling error:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -299,7 +344,14 @@ async function createTask(env: Env, body: Record<string, unknown>, actorPersonId
 
   // Notify (responsible assignment + mentions) detached from the response. Safe no-op
   // when email is disabled; never affects the 201 just produced.
-  if (row) ctx.waitUntil(scheduleCreateNotifications(env, row as TaskRow, actorPersonId));
+  if (row) {
+    ctx.waitUntil(scheduleCreateNotifications(env, row as TaskRow, actorPersonId));
+    // Persist My-Mentions rows for everyone mentioned in the new task (runs regardless of
+    // email config). Detached; never affects the response.
+    ctx.waitUntil(
+      scheduleMentionNotifications(env, row.id as string, row as TaskRow, newlyMentionedOnCreate(row as TaskRow), actorPersonId),
+    );
+  }
 
   return jsonResponse(mapTaskRow(row), 201, origin);
 }
@@ -308,10 +360,12 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
   if (Object.keys(payload).length === 0) {
     return errorResponse('No editable fields supplied', 400, origin);
   }
-  // Snapshot the pre-update row ONLY when email is on, so we can diff responsible/mentions.
-  // When email is disabled (the default) this read is skipped entirely.
+  // Snapshot the pre-update row when we need to diff against it: (a) email is on (to compute
+  // assignment/mention/update recipients), OR (b) Description/Notes is being patched (to detect
+  // NEWLY added person mentions for the My-Mentions inbox — independent of email config).
   const emailEnabled = env.EMAIL_ENABLED === 'true';
-  const oldRow = emailEnabled
+  const tracksMentions = 'description' in payload || 'notes' in payload;
+  const oldRow = (emailEnabled || tracksMentions)
     ? await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first<Record<string, unknown>>()
     : null;
   // Column names come only from the validated TASK_FIELDS whitelist → safe to interpolate.
@@ -339,10 +393,89 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
   // Notify only the NEW responsible person (if changed) and NEWLY mentioned people.
   // Detached; safe no-op when email is disabled.
   if (oldRow) {
-    ctx.waitUntil(scheduleUpdateNotifications(env, oldRow as TaskRow, row as TaskRow, actorPersonId));
+    if (emailEnabled) {
+      ctx.waitUntil(scheduleUpdateNotifications(env, oldRow as TaskRow, row as TaskRow, actorPersonId));
+    }
+    // Persist My-Mentions rows for people mentioned by THIS edit but not before it. Runs
+    // regardless of email config; archive/restore never reach here (no Description/Notes).
+    if (tracksMentions) {
+      const newIds = newlyMentionedOnUpdate(oldRow as TaskRow, row as TaskRow);
+      ctx.waitUntil(scheduleMentionNotifications(env, row.id as string, row as TaskRow, newIds, actorPersonId));
+    }
   }
 
   return jsonResponse(mapTaskRow(row), 200, origin);
+}
+
+// ── My Mentions endpoints ────────────────────────────────────────────────────
+// Identity is the `person_id` query/body param sourced from the app's "Current user"
+// selector. This is a lightweight workflow identity, NOT authentication — anyone can pass
+// any person_id. Accepted as the current (no-auth) design; documented in the docs.
+
+// GET /api/mentions?person_id=<id>&status=unread|all  (default unread, newest first).
+async function listMentions(
+  env: Env,
+  personId: string | null,
+  status: string | null,
+  origin: string | null,
+): Promise<Response> {
+  if (!personId) return errorResponse('person_id is required', 400, origin);
+  const unreadOnly = status !== 'all'; // default (and any value other than "all") → unread only
+  const sql =
+    `SELECT n.id, n.task_id, n.task_number, n.mentioned_person_id, n.actor_person_id,
+            n.created_at, n.opened_at, n.snippet, n.source,
+            t.title AS task_title, t.archived AS task_archived,
+            ap.name AS actor_name
+       FROM mention_notifications n
+       LEFT JOIN tasks  t  ON t.id  = n.task_id
+       LEFT JOIN people ap ON ap.id = n.actor_person_id
+      WHERE n.mentioned_person_id = ?${unreadOnly ? ' AND n.opened_at IS NULL' : ''}
+      ORDER BY n.created_at DESC, n.id DESC`;
+  const { results } = await env.DB.prepare(sql).bind(personId).all<Record<string, unknown>>();
+  // Expose archived as a boolean (D1 stores 0/1), mirroring mapTaskRow.
+  const mapped = results.map(r => ({ ...r, task_archived: r.task_archived === 1 || r.task_archived === true }));
+  return jsonResponse(mapped, 200, origin);
+}
+
+// GET /api/mentions/count?person_id=<id> → { count } of unread mentions.
+async function countMentions(env: Env, personId: string | null, origin: string | null): Promise<Response> {
+  if (!personId) return errorResponse('person_id is required', 400, origin);
+  const row = await env.DB
+    .prepare('SELECT COUNT(*) AS c FROM mention_notifications WHERE mentioned_person_id = ? AND opened_at IS NULL')
+    .bind(personId)
+    .first<{ c: number }>();
+  return jsonResponse({ count: row?.c ?? 0 }, 200, origin);
+}
+
+// POST/PATCH /api/mentions/:id/open  body { person_id } → marks opened_at (idempotent).
+// Since there is no auth, person_id is validated to equal the row's mentioned_person_id;
+// a mismatch is rejected (403) so one person cannot mark another's mention opened.
+async function openMention(
+  env: Env,
+  id: string,
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const personId = typeof body.person_id === 'string' ? body.person_id : '';
+  if (!personId) return errorResponse('person_id is required', 400, origin);
+  const numId = Number(id);
+  if (!Number.isInteger(numId) || numId <= 0) return errorResponse('Invalid mention id', 400, origin);
+
+  const row = await env.DB
+    .prepare('SELECT id, mentioned_person_id, opened_at FROM mention_notifications WHERE id = ?')
+    .bind(numId)
+    .first<{ id: number; mentioned_person_id: string; opened_at: string | null }>();
+  if (!row) return errorResponse('Mention not found', 404, origin);
+  if (row.mentioned_person_id !== personId) {
+    return errorResponse('person_id does not match the mentioned person', 403, origin);
+  }
+  if (row.opened_at) return jsonResponse({ ok: true, alreadyOpened: true }, 200, origin); // idempotent
+
+  await env.DB
+    .prepare('UPDATE mention_notifications SET opened_at = ? WHERE id = ?')
+    .bind(new Date().toISOString(), numId)
+    .run();
+  return jsonResponse({ ok: true }, 200, origin);
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
@@ -409,6 +542,23 @@ export default {
         if (parts.length === 4 && method === 'POST') {
           if (parts[3] === 'archive') return await patchTask(env, id, { archived: true }, null, origin, ctx);
           if (parts[3] === 'restore') return await patchTask(env, id, { archived: false }, null, origin, ctx);
+        }
+        return errorResponse('Not Found', 404, origin);
+      }
+
+      // /api/mentions — My Mentions inbox (lightweight Current-user identity, not auth).
+      if (parts[1] === 'mentions') {
+        // /api/mentions?person_id=&status=
+        if (parts.length === 2 && method === 'GET') {
+          return await listMentions(env, searchParams.get('person_id'), searchParams.get('status'), origin);
+        }
+        // /api/mentions/count?person_id=
+        if (parts.length === 3 && parts[2] === 'count' && method === 'GET') {
+          return await countMentions(env, searchParams.get('person_id'), origin);
+        }
+        // /api/mentions/:id/open
+        if (parts.length === 4 && parts[3] === 'open' && (method === 'POST' || method === 'PATCH')) {
+          return await openMention(env, parts[2], await parseJsonBody(request), origin);
         }
         return errorResponse('Not Found', 404, origin);
       }

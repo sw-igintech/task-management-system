@@ -53,6 +53,17 @@ export interface TaskRow {
 }
 
 type RecipientKind = 'assignment' | 'mention' | 'update';
+// One detected change to a text field (Description or Notes) for the 'update' email.
+//   * `added`  — the appended text (when it could be confidently detected: old text is a
+//                prefix of new, or old was empty). Already rendered (@person:<id> → @Name)
+//                and trimmed. null when no confident append → use the Before/After fallback.
+//   * `before` / `after` — trimmed+rendered old/new text for the fallback block. Always set.
+interface FieldChange {
+  field: string;
+  added: string | null;
+  before: string;
+  after: string;
+}
 interface Recipient {
   personId: string;
   name: string;
@@ -60,6 +71,8 @@ interface Recipient {
   kind: RecipientKind;
   // For the 'update' kind only: which of Description/Notes actually changed, in order.
   changedFields?: string[];
+  // For the 'update' kind only: the detected added-text / Before-After diff per changed field.
+  changes?: FieldChange[];
 }
 
 // Mirror of src/lib/mentions.ts — kept duplicated because the Worker is a separate
@@ -86,6 +99,120 @@ export function extractPersonMentionIds(text: string | null | undefined): string
 function taskMentionIds(task: TaskRow): string[] {
   const all = [...extractPersonMentionIds(task.description), ...extractPersonMentionIds(task.notes)];
   return Array.from(new Set(all));
+}
+
+// Renders stored "@person:<id>" tokens as friendly "@Name" for email bodies (mirrors the
+// frontend's renderStoredMentionsForDisplay). An id that no longer resolves → "@unknown".
+// "@TASK-123" task references carry no "person:" prefix, so they are left untouched and
+// stay readable as TASK references.
+function renderMentionsForEmail(text: string, peopleById: Map<string, PersonRow>): string {
+  return text.replace(new RegExp(PERSON_MENTION_SOURCE, 'g'), (_m, id: string) => {
+    const name = peopleById.get(id)?.name;
+    return name ? `@${name}` : '@unknown';
+  });
+}
+
+// Per-field cap for added/before/after text in update emails. Keeps emails small; longer
+// content is cut at the cap and marked with a trailing "... [trimmed]". Line breaks within
+// the kept portion are preserved (readability).
+const MAX_FIELD_CHARS = 2000;
+function trimForEmail(text: string, max: number = MAX_FIELD_CHARS): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trimEnd()}\n... [trimmed]`;
+}
+
+// Normalises only CRLF→LF so a pure line-ending difference is not treated as a content
+// change and prefix detection is reliable. No other normalisation (preserves the text).
+function normalizeNewlines(text: string | null | undefined): string {
+  return (text ?? '').replace(/\r\n/g, '\n');
+}
+
+// Computes the diff for one changed text field (Description or Notes).
+//   * If old is empty and new has content → the whole new text is the added text.
+//   * Else if new starts with old (append-style, the common dated-bullet case) → the added
+//     text is newText.slice(oldText.length).trim().
+//   * Otherwise (a middle edit or deletion) → added = null; the email uses Before/After.
+// All emitted text has mentions rendered to @Name and is trimmed to MAX_FIELD_CHARS.
+function computeFieldChange(
+  field: string,
+  oldRaw: string | null | undefined,
+  newRaw: string | null | undefined,
+  peopleById: Map<string, PersonRow>,
+): FieldChange {
+  const oldText = normalizeNewlines(oldRaw);
+  const newText = normalizeNewlines(newRaw);
+  const render = (t: string) => trimForEmail(renderMentionsForEmail(t, peopleById));
+
+  let added: string | null = null;
+  if (oldText.trim() === '' && newText.trim() !== '') {
+    added = newText.trim();
+  } else if (newText.startsWith(oldText)) {
+    const slice = newText.slice(oldText.length).trim();
+    if (slice !== '') added = slice;
+  }
+
+  return {
+    field,
+    added: added != null ? render(added) : null,
+    before: render(oldText.trim()),
+    after: render(newText.trim()),
+  };
+}
+
+// Builds the per-field change list (Description before Notes) for the fields that actually
+// changed between old and new. Used by the 'update' email to show what was added.
+function computeFieldChanges(
+  oldTask: TaskRow,
+  newTask: TaskRow,
+  peopleById: Map<string, PersonRow>,
+): FieldChange[] {
+  const changes: FieldChange[] = [];
+  if ((oldTask.description ?? '') !== (newTask.description ?? '')) {
+    changes.push(computeFieldChange('Description', oldTask.description, newTask.description, peopleById));
+  }
+  if ((oldTask.notes ?? '') !== (newTask.notes ?? '')) {
+    changes.push(computeFieldChange('Notes', oldTask.notes, newTask.notes, peopleById));
+  }
+  return changes;
+}
+
+// ── My Mentions: newly-mentioned detection + snippet (in-app inbox, NOT email) ───────
+// These power the mention_notifications rows the Worker persists so a person can later see
+// who mentioned them. They are independent of email config (the inbox works even when email
+// is disabled) and of whether the mentioned person has an email address.
+
+// All person ids mentioned in a freshly created task (every mention is "new").
+export function newlyMentionedOnCreate(task: TaskRow): string[] {
+  return taskMentionIds(task);
+}
+
+// Person ids mentioned in the updated task but NOT before it — i.e. mentions added by THIS
+// edit. Unchanged existing mentions and @TASK references never appear here.
+export function newlyMentionedOnUpdate(oldTask: TaskRow, newTask: TaskRow): string[] {
+  const before = new Set(taskMentionIds(oldTask));
+  return taskMentionIds(newTask).filter(id => !before.has(id));
+}
+
+// A short, human-readable snippet for where a person was mentioned: the first line/bullet
+// in Description (then Notes) that contains the "@person:<id>" token, with mentions rendered
+// to @Name and trimmed. Returns null when the token isn't found in either field.
+const SNIPPET_MAX_CHARS = 200;
+export function mentionSnippet(
+  task: TaskRow,
+  personId: string,
+  peopleById: Map<string, PersonRow>,
+): string | null {
+  const token = `@person:${personId}`;
+  for (const raw of [task.description, task.notes]) {
+    const text = normalizeNewlines(raw);
+    if (!text.includes(token)) continue;
+    const line = text.split('\n').find(l => l.includes(token)) ?? text;
+    const rendered = renderMentionsForEmail(line.trim(), peopleById);
+    return rendered.length > SNIPPET_MAX_CHARS
+      ? `${rendered.slice(0, SNIPPET_MAX_CHARS).trimEnd()}…`
+      : rendered;
+  }
+  return null;
 }
 
 // Which of Description / Notes actually changed between the old and new task row. Compared
@@ -153,7 +280,8 @@ export function computeUpdateRecipients(
     const person = peopleById.get(respId);
     const email = person?.email?.trim();
     if (person && email) {
-      map.set(respId, { personId: respId, name: person.name, email, kind: 'update', changedFields });
+      const changes = computeFieldChanges(oldTask, newTask, peopleById);
+      map.set(respId, { personId: respId, name: person.name, email, kind: 'update', changedFields, changes });
     }
   }
 
@@ -213,8 +341,21 @@ export function buildEmail(
     // Who performed the update — the actor (Current user), falling back as elsewhere.
     const updatedBy = actorName && actorName.trim() ? actorName.trim() : 'Someone';
     const changed = recipient.changedFields && recipient.changedFields.length
-      ? recipient.changedFields.join(' / ')
+      ? recipient.changedFields.join(', ')
       : 'Description / Notes';
+
+    // What actually changed, per field: the appended text when it was confidently detected,
+    // otherwise a concise Before/After block. Mentions are already rendered to @Name and the
+    // text is trimmed (see computeFieldChange). Sections appear in Description-then-Notes order.
+    let details = '';
+    for (const c of recipient.changes ?? []) {
+      if (c.added != null) {
+        details += `\nAdded to ${c.field}:\n${c.added}\n`;
+      } else {
+        details += `\n${c.field} changed.\n\nBefore:\n${c.before || '(empty)'}\n\nAfter:\n${c.after || '(empty)'}\n`;
+      }
+    }
+
     return {
       subject: `Task updated: ${key} - ${title}`,
       text:
@@ -223,8 +364,9 @@ export function buildEmail(
         `Task: ${key} - ${title}\n` +
         `Opened by: ${openedBy}\n` +
         `Updated by: ${updatedBy}\n` +
-        `Changed fields: ${changed}\n\n` +
-        `Open task: ${url}\n`,
+        `Changed fields: ${changed}\n` +
+        details +
+        `\nOpen task: ${url}\n`,
     };
   }
 

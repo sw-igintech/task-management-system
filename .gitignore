@@ -58,3 +58,6 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Wrangler local state (miniflare D1 / KV used for local validation only)
+.wrangler/
