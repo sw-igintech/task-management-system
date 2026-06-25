@@ -74,6 +74,16 @@ deletes data** — it only applies additive DDL.
   npx wrangler d1 execute task-management-production --remote \
     --file=d1/migrations/2026-06-25_add_mention_notifications.sql
   ```
+- `2026-06-26_add_activity_events.sql` — adds the **`activity_events`** table (+ 4 indexes)
+  backing the general **Activity / Notifications** feed. Additive and non-destructive; uses
+  `CREATE TABLE/INDEX IF NOT EXISTS`, so re-applying it is a **safe no-op**. Also declared in
+  `d1/schema.sql`. **Apply to production before/around merging** the code that reads/writes it
+  (the app degrades gracefully if it's missing — Activity rows just don't persist and the
+  Activity view shows "No activity yet"; task create/update still succeed). Manual equivalent:
+  ```bash
+  npx wrangler d1 execute task-management-production --remote \
+    --file=d1/migrations/2026-06-26_add_activity_events.sql
+  ```
 - SQLite `ALTER TABLE ... ADD COLUMN` has **no `IF NOT EXISTS`**, so re-applying an
   already-present column fails with *"duplicate column name"*. The workflow treats that
   exact error as a **safe no-op** (and fails on any other error), then verifies via

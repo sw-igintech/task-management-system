@@ -6,7 +6,7 @@
 // the public Worker endpoints over plain JSON. The service-role key lives only inside
 // the Worker, never here.
 
-import type { Task, Person, MentionNotification } from '../types';
+import type { Task, Person, MentionNotification, ActivityEvent, ActivityFilters } from '../types';
 
 // Trailing slashes stripped so `${base}/api/...` is always well-formed.
 export const WORKER_API_URL = (import.meta.env.VITE_WORKER_API_URL || '').replace(/\/+$/, '');
@@ -56,4 +56,15 @@ export const taskApi = {
       method: 'POST',
       body: JSON.stringify({ person_id: personId }),
     }),
+  // General Activity feed (history) for the Current user, newest first, with optional filters.
+  getActivity: (personId: string, filters: ActivityFilters = {}) => {
+    const params = new URLSearchParams({ person_id: personId });
+    if (filters.event_type) params.set('event_type', filters.event_type);
+    if (filters.actor_person_id) params.set('actor_person_id', filters.actor_person_id);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    if (filters.q && filters.q.trim() !== '') params.set('q', filters.q.trim());
+    params.set('limit', String(filters.limit ?? 100));
+    return request<ActivityEvent[]>(`/api/activity?${params.toString()}`);
+  },
 };
