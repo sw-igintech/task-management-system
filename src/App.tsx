@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ClipboardList, LayoutDashboard, Wrench, Database, User, AtSign } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, Wrench, Database, User, AtSign, Bell } from 'lucide-react';
 import { useTasks } from './hooks/useTasks';
 import { useCurrentUser } from './hooks/useCurrentUser';
 import { useMentions } from './hooks/useMentions';
+import { useActivity } from './hooks/useActivity';
 import { TasksPage } from './pages/TasksPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MentionsPage } from './pages/MentionsPage';
+import { ActivityPage } from './pages/ActivityPage';
 import type { TaskFilters } from './types';
 import './index.css';
 
 const queryClient = new QueryClient();
 
-type Tab = 'tasks' | 'dashboard' | 'mentions';
+type Tab = 'tasks' | 'dashboard' | 'mentions' | 'activity';
 
 function AppInner() {
   const [activeTab, setActiveTab] = useState<Tab>('tasks');
@@ -22,6 +24,8 @@ function AppInner() {
   const { currentUserId, setCurrentUserId, needsSelection, requestSelection } = useCurrentUser(hookData.people);
   // My Mentions inbox for the Current user — drives the header @ badge and the Mentions view.
   const { mentions, unreadCount, loading: mentionsLoading, markOpened } = useMentions(currentUserId);
+  // General Activity feed (history) for the Current user — drives the bell button + view.
+  const activity = useActivity(currentUserId);
 
   const switchToTasksWithFilters = (filters?: Partial<TaskFilters>) => {
     if (filters) {
@@ -45,19 +49,42 @@ function AppInner() {
     setActiveTab('mentions');
   };
 
+  // Header bell button: open the Activity view. Same no-Current-user treatment as @.
+  const openActivity = () => {
+    if (!currentUserId) requestSelection();
+    setActiveTab('activity');
+  };
+
+  // Shared styling for the compact header action icons (@ and bell): identical size, radius,
+  // hover/focus. Active view → filled blue; otherwise subtle until hover.
+  const iconButtonClass = (active: boolean) =>
+    `relative flex items-center justify-center w-9 h-9 rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+      active
+        ? 'bg-blue-600 border-blue-600 text-white'
+        : 'border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+    }`;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          {/* Brand: clicking the logo or title navigates to the Tasks page (keyboard
+              accessible button; no full page reload — single-page tab switch). */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('tasks')}
+            className="flex items-center gap-2.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label="Engineering Task Manager — go to Tasks"
+            title="Go to Tasks"
+          >
             <div className="bg-blue-600 text-white p-1.5 rounded-lg">
               <Wrench size={18} />
             </div>
             <span className="font-bold text-gray-900 text-lg tracking-tight">
               Engineering Task Manager
             </span>
-          </div>
+          </button>
 
           {/* Tab navigation */}
           <nav className="flex items-center gap-1">
@@ -86,27 +113,39 @@ function AppInner() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {/* My Mentions — compact icon-only @ button (social-app style). Tooltip/aria-label
-                "My Mentions"; shows a small unread-count badge when > 0. Not a text tab; the
-                future Activity/Notifications bell is intentionally NOT added here. */}
-            <button
-              onClick={openMentions}
-              className={`relative flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-                activeTab === 'mentions' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              title="My Mentions"
-              aria-label={unreadCount > 0 ? `My Mentions (${unreadCount} unread)` : 'My Mentions'}
-            >
-              <AtSign size={16} />
-              {unreadCount > 0 && (
-                <span
-                  className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none flex items-center justify-center"
-                  aria-hidden="true"
-                >
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
+            {/* Header action icons — compact icon-only group (social-app style), consistent
+                size/radius/hover/focus/badge styling. @ = My Mentions (unread inbox, red
+                badge), bell = Activity (read-only history; no always-on badge since Activity
+                has no unread concept). Both icon-only with tooltips/aria-labels. */}
+            <div className="flex items-center gap-1">
+              {/* My Mentions */}
+              <button
+                onClick={openMentions}
+                className={iconButtonClass(activeTab === 'mentions')}
+                title="My Mentions"
+                aria-label={unreadCount > 0 ? `My Mentions (${unreadCount} unread)` : 'My Mentions'}
+              >
+                <AtSign size={17} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none flex items-center justify-center ring-2 ring-white"
+                    aria-hidden="true"
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Activity */}
+              <button
+                onClick={openActivity}
+                className={iconButtonClass(activeTab === 'activity')}
+                title="Activity"
+                aria-label="Activity"
+              >
+                <Bell size={17} />
+              </button>
+            </div>
 
             {/* Current user — lightweight actor selector (not authentication). Persisted in
                 localStorage; used as the actor for notification emails. When a save is
@@ -160,6 +199,16 @@ function AppInner() {
             loading={mentionsLoading}
             currentUserId={currentUserId}
             onMarkOpened={markOpened}
+            onOpenTask={openTaskByNumber}
+          />
+        ) : activeTab === 'activity' ? (
+          <ActivityPage
+            events={activity.events}
+            loading={activity.loading}
+            currentUserId={currentUserId}
+            people={hookData.people}
+            filters={activity.filters}
+            setFilters={activity.setFilters}
             onOpenTask={openTaskByNumber}
           />
         ) : (

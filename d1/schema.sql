@@ -67,3 +67,29 @@ CREATE INDEX IF NOT EXISTS idx_mention_notifications_task
   ON mention_notifications(task_id);
 CREATE INDEX IF NOT EXISTS idx_mention_notifications_actor
   ON mention_notifications(actor_person_id);
+
+-- Activity / Notifications feed: a chronological history of task events relevant to a person
+-- (the lightweight "Current user" — NOT authentication). Distinct from mention_notifications
+-- (My Mentions = actionable unread; Activity = read-only history, no unread/read state). One
+-- row per target person. See d1/migrations/2026-06-26_add_activity_events.sql and
+-- docs/cloudflare-worker-api.md.
+CREATE TABLE IF NOT EXISTS activity_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id           TEXT NOT NULL,
+  task_number       INTEGER NOT NULL,
+  actor_person_id   TEXT,
+  target_person_id  TEXT,
+  event_type        TEXT NOT NULL,
+  summary           TEXT NOT NULL,
+  details_json      TEXT,
+  created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_events_target
+  ON activity_events(target_person_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_events_actor
+  ON activity_events(actor_person_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_events_type
+  ON activity_events(event_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_events_task
+  ON activity_events(task_id, created_at);

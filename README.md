@@ -29,8 +29,16 @@ A complete task management system for the engineering team, built with Vite + Re
 - **My Mentions inbox** — a compact icon-only `@` button in the header (with an unread badge)
   opens a list of unread mentions for the selected Current user; clicking one marks it read
   (persisted in D1) and opens the task. Identity is the Current user (lightweight, **not**
-  auth). The future Activity/Notifications **bell is not** implemented. Requires the
-  `mention_notifications` D1 migration (see `docs/d1-migration.md`)
+  auth). Requires the `mention_notifications` D1 migration (see `docs/d1-migration.md`)
+- **Activity feed** — a compact icon-only **bell** button in the header (next to `@`) opens a
+  chronological **Activity** history for the Current user: assignments, mentions, Description/
+  Notes updates, status/priority/due/closed-date changes, archive/restore. Compact filters
+  (person/actor, event type, date range, text search). Distinct from My Mentions — Activity is
+  a read-only history (no unread/read state); My Mentions is the actionable unread inbox.
+  Identity is the Current user (lightweight, **not** auth / not an audit-security log).
+  Requires the `activity_events` D1 migration (see `docs/d1-migration.md`)
+- **Header navigation** — clicking the **Engineering Task Manager** brand/logo returns to the
+  Tasks page; the `@` (My Mentions) and bell (Activity) icons form a consistent header action group
 
 ## Quick Start
 

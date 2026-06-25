@@ -24,6 +24,12 @@ import {
   newlyMentionedOnCreate,
   newlyMentionedOnUpdate,
 } from './email';
+import {
+  type ActivityTaskRow,
+  type PendingActivity,
+  buildCreateActivity,
+  buildUpdateActivity,
+} from './activity';
 
 export interface Env extends EmailEnv {
   DB: D1Database;
@@ -200,6 +206,66 @@ async function scheduleMentionNotifications(
   }
 }
 
+// ── Activity feed (best-effort, INDEPENDENT of email config) ─────────────────
+// Persists chronological activity_events rows (one per target person) for the general
+// Activity feed. Like My Mentions, this runs regardless of EMAIL_ENABLED, NEVER throws (run
+// via ctx.waitUntil), and must not affect the task mutation's success. If the table doesn't
+// exist yet (migration not applied), each insert fails and is logged, but the task op already
+// succeeded.
+async function insertActivityEvents(env: Env, events: PendingActivity[]): Promise<void> {
+  if (events.length === 0) return;
+  const now = new Date().toISOString();
+  for (const ev of events) {
+    try {
+      await env.DB
+        .prepare(
+          `INSERT INTO activity_events
+             (task_id, task_number, actor_person_id, target_person_id, event_type, summary, details_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          ev.task_id,
+          ev.task_number,
+          ev.actor_person_id,
+          ev.target_person_id,
+          ev.event_type,
+          ev.summary,
+          ev.details ? JSON.stringify(ev.details) : null,
+          now,
+        )
+        .run();
+    } catch (err) {
+      console.warn(
+        `[activity] insert failed (task ${ev.task_number}, ${ev.event_type} → ${ev.target_person_id}):`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+}
+
+async function scheduleCreateActivity(env: Env, task: ActivityTaskRow, actorPersonId: string | null): Promise<void> {
+  try {
+    const peopleById = await loadPeopleById(env);
+    await insertActivityEvents(env, buildCreateActivity(task, actorPersonId, peopleById));
+  } catch (err) {
+    console.warn('[activity] create scheduling error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function scheduleUpdateActivity(
+  env: Env,
+  oldTask: ActivityTaskRow,
+  newTask: ActivityTaskRow,
+  actorPersonId: string | null,
+): Promise<void> {
+  try {
+    const peopleById = await loadPeopleById(env);
+    await insertActivityEvents(env, buildUpdateActivity(oldTask, newTask, actorPersonId, peopleById));
+  } catch (err) {
+    console.warn('[activity] update scheduling error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 // ── Validation (unchanged contract) ─────────────────────────────────────────
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -351,6 +417,9 @@ async function createTask(env: Env, body: Record<string, unknown>, actorPersonId
     ctx.waitUntil(
       scheduleMentionNotifications(env, row.id as string, row as TaskRow, newlyMentionedOnCreate(row as TaskRow), actorPersonId),
     );
+    // Persist Activity feed events (assignment / mention / created). Independent of email
+    // config; detached; never affects the response.
+    ctx.waitUntil(scheduleCreateActivity(env, row as ActivityTaskRow, actorPersonId));
   }
 
   return jsonResponse(mapTaskRow(row), 201, origin);
@@ -360,14 +429,12 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
   if (Object.keys(payload).length === 0) {
     return errorResponse('No editable fields supplied', 400, origin);
   }
-  // Snapshot the pre-update row when we need to diff against it: (a) email is on (to compute
-  // assignment/mention/update recipients), OR (b) Description/Notes is being patched (to detect
-  // NEWLY added person mentions for the My-Mentions inbox — independent of email config).
+  // Snapshot the pre-update row. Always needed now: the Activity feed diffs ANY field
+  // (status/priority/dates/archived/desc/notes/responsible), and it is also reused for the
+  // email recipients and the My-Mentions newly-mentioned detection. One indexed PK lookup.
   const emailEnabled = env.EMAIL_ENABLED === 'true';
   const tracksMentions = 'description' in payload || 'notes' in payload;
-  const oldRow = (emailEnabled || tracksMentions)
-    ? await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first<Record<string, unknown>>()
-    : null;
+  const oldRow = await env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first<Record<string, unknown>>();
   // Column names come only from the validated TASK_FIELDS whitelist → safe to interpolate.
   const sets: string[] = [];
   const binds: unknown[] = [];
@@ -402,6 +469,9 @@ async function patchTask(env: Env, id: string, payload: Record<string, unknown>,
       const newIds = newlyMentionedOnUpdate(oldRow as TaskRow, row as TaskRow);
       ctx.waitUntil(scheduleMentionNotifications(env, row.id as string, row as TaskRow, newIds, actorPersonId));
     }
+    // Persist Activity feed events (mention / assignment / field changes / archive-restore).
+    // Independent of email config; detached; never affects the response.
+    ctx.waitUntil(scheduleUpdateActivity(env, oldRow as ActivityTaskRow, row as ActivityTaskRow, actorPersonId));
   }
 
   return jsonResponse(mapTaskRow(row), 200, origin);
@@ -476,6 +546,81 @@ async function openMention(
     .bind(new Date().toISOString(), numId)
     .run();
   return jsonResponse({ ok: true }, 200, origin);
+}
+
+// ── Activity feed endpoints ──────────────────────────────────────────────────
+// Identity is the `person_id` query param sourced from the app's "Current user" selector — a
+// lightweight workflow identity, NOT authentication (any person_id is accepted). Activity is
+// a read-only history list (no unread/read state); My Mentions remains the unread inbox.
+
+// GET /api/activity?person_id=&limit=&event_type=&actor_person_id=&from=&to=&q=
+async function listActivity(env: Env, params: URLSearchParams, origin: string | null): Promise<Response> {
+  const personId = params.get('person_id');
+  if (!personId) return errorResponse('person_id is required', 400, origin);
+
+  // limit: default 50, clamped to 1..200.
+  const rawLimit = Number(params.get('limit'));
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
+
+  const where: string[] = ['a.target_person_id = ?'];
+  const binds: unknown[] = [personId];
+
+  const eventType = params.get('event_type');
+  if (eventType) { where.push('a.event_type = ?'); binds.push(eventType); }
+
+  const actor = params.get('actor_person_id');
+  if (actor) { where.push('a.actor_person_id = ?'); binds.push(actor); }
+
+  // Date range over created_at (ISO strings compare lexicographically). A date-only `to` is
+  // extended to the end of that day so the whole day is included.
+  const from = params.get('from');
+  if (from) { where.push('a.created_at >= ?'); binds.push(from); }
+  const to = params.get('to');
+  if (to) { where.push('a.created_at <= ?'); binds.push(to.length === 10 ? `${to}T23:59:59.999Z` : to); }
+
+  // Free-text search over task title, summary, details, and the task number/key.
+  const q = params.get('q');
+  if (q && q.trim() !== '') {
+    const like = `%${q.trim()}%`;
+    where.push('(t.title LIKE ? OR a.summary LIKE ? OR a.details_json LIKE ? OR CAST(a.task_number AS TEXT) LIKE ?)');
+    binds.push(like, like, like, like);
+  }
+
+  const sql =
+    `SELECT a.id, a.task_id, a.task_number, a.actor_person_id, a.target_person_id,
+            a.event_type, a.summary, a.details_json, a.created_at,
+            t.title AS task_title, t.archived AS task_archived,
+            ap.name AS actor_name, tp.name AS target_name
+       FROM activity_events a
+       LEFT JOIN tasks  t  ON t.id  = a.task_id
+       LEFT JOIN people ap ON ap.id = a.actor_person_id
+       LEFT JOIN people tp ON tp.id = a.target_person_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT ?`;
+  binds.push(limit);
+
+  const { results } = await env.DB.prepare(sql).bind(...binds).all<Record<string, unknown>>();
+  const mapped = results.map(r => {
+    let details: unknown = null;
+    if (typeof r.details_json === 'string' && r.details_json) {
+      try { details = JSON.parse(r.details_json); } catch { details = null; }
+    }
+    return { ...r, task_archived: r.task_archived === 1 || r.task_archived === true, details };
+  });
+  return jsonResponse(mapped, 200, origin);
+}
+
+// GET /api/activity/count?person_id=<id> → { count } total activity events for that person.
+// Activity has NO unread/read concept; this is a plain total (the UI does not show an
+// always-on bell badge). Provided for completeness.
+async function countActivity(env: Env, personId: string | null, origin: string | null): Promise<Response> {
+  if (!personId) return errorResponse('person_id is required', 400, origin);
+  const row = await env.DB
+    .prepare('SELECT COUNT(*) AS c FROM activity_events WHERE target_person_id = ?')
+    .bind(personId)
+    .first<{ c: number }>();
+  return jsonResponse({ count: row?.c ?? 0 }, 200, origin);
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
@@ -559,6 +704,17 @@ export default {
         // /api/mentions/:id/open
         if (parts.length === 4 && parts[3] === 'open' && (method === 'POST' || method === 'PATCH')) {
           return await openMention(env, parts[2], await parseJsonBody(request), origin);
+        }
+        return errorResponse('Not Found', 404, origin);
+      }
+
+      // /api/activity — general Activity feed (read-only history; Current-user identity, not auth).
+      if (parts[1] === 'activity') {
+        if (parts.length === 2 && method === 'GET') {
+          return await listActivity(env, searchParams, origin);
+        }
+        if (parts.length === 3 && parts[2] === 'count' && method === 'GET') {
+          return await countActivity(env, searchParams.get('person_id'), origin);
         }
         return errorResponse('Not Found', 404, origin);
       }

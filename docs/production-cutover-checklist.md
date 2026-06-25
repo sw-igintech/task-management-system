@@ -109,10 +109,20 @@ always succeeds regardless of email state (best-effort, detached send).
   mid-text edits); see [`email-notifications.md`](email-notifications.md).
 - **My Mentions inbox** — header icon-only `@` button (unread badge) lists unread mentions for
   the Current user; opening one marks it read (D1) and opens the task. Identity = Current user
-  (lightweight, **not** auth). The future Activity/Notifications **bell is not** implemented.
+  (lightweight, **not** auth).
   - ⚠️ **Manual D1 step:** apply `d1/migrations/2026-06-25_add_mention_notifications.sql` to
     **production** (via the **D1 Apply Migrations** workflow → `production`, or
     `npx wrangler d1 execute task-management-production --remote --file=…`) **before/around
     merge**. Until applied, mentions don't persist and the `@` badge stays empty, but task
     create/update still succeeds (fail-graceful).
-- Full details: [`email-notifications.md`](email-notifications.md).
+- **Activity feed** — header icon-only **bell** button (next to `@`) opens a read-only
+  chronological Activity history for the Current user (assignments, mentions, Description/Notes
+  updates, status/priority/due/closed-date changes, archive/restore), with person/type/date/text
+  filters. Distinct from My Mentions (history vs. unread inbox). Identity = Current user
+  (lightweight, **not** auth / not an audit-security log). Clicking the **brand/logo** returns
+  to Tasks.
+  - ⚠️ **Manual D1 step:** apply `d1/migrations/2026-06-26_add_activity_events.sql` to
+    **production** (same mechanism as above) **before/around merge**. Until applied, Activity
+    rows don't persist and the Activity view shows "No activity yet", but task create/update
+    still succeeds (fail-graceful).
+- Full details: [`email-notifications.md`](email-notifications.md), [`cloudflare-worker-api.md`](cloudflare-worker-api.md).

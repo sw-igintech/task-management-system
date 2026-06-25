@@ -337,6 +337,12 @@ The **My Mentions** inbox lets a person see who mentioned them and jump to the t
 they missed (or never get) the email. It is **separate from email** and works regardless of
 `EMAIL_ENABLED` or whether the mentioned person has an email address.
 
+> **My Mentions vs. Activity:** My Mentions (header `@` icon) is the **actionable unread inbox**
+> — mentions only, with open/read state. The **Activity** feed (header **bell** icon) is a
+> broader **read-only chronological history** (assignments, mentions, updates, status/priority/
+> date changes, archive/restore) with **no** unread/read state. Both use the Current user as a
+> lightweight identity (not auth). See `docs/cloudflare-worker-api.md` (Activity feed endpoints).
+
 ### Identity (lightweight, NOT auth)
 
 My Mentions uses the existing **Current user** selector as the identity. **It is not

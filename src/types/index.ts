@@ -71,3 +71,35 @@ export interface MentionNotification {
   created_at: string;
   opened_at: string | null;
 }
+
+// A persisted general Activity feed event (one row per target person). Distinct from
+// MentionNotification: Activity is a read-only chronological HISTORY (no unread/read state);
+// My Mentions is the actionable unread inbox. Identity is the "Current user" — NOT auth.
+// Shape mirrors the Worker's GET /api/activity response (joined task title + actor/target names).
+export interface ActivityEvent {
+  id: number;
+  task_id: string;
+  task_number: number;
+  actor_person_id: string | null;
+  target_person_id: string | null;
+  actor_name: string | null;
+  target_name: string | null;
+  event_type: string;
+  summary: string;
+  // Parsed details_json (structured per event type), plus the raw string as a fallback.
+  details: Record<string, unknown> | null;
+  details_json: string | null;
+  task_title: string | null;
+  task_archived: boolean;
+  created_at: string;
+}
+
+// Query filters for GET /api/activity (all optional; person_id is supplied separately).
+export interface ActivityFilters {
+  event_type?: string;
+  actor_person_id?: string;
+  from?: string;
+  to?: string;
+  q?: string;
+  limit?: number;
+}

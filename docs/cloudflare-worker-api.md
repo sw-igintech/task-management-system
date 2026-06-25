@@ -57,6 +57,8 @@ Supabase is no longer in the runtime path for this Worker. API base URL:
 | GET | `/api/mentions?person_id=<id>&status=unread` | unread mentions for that person (newest first) | 200 |
 | GET | `/api/mentions/count?person_id=<id>` | `{ count }` unread count | 200 |
 | POST/PATCH | `/api/mentions/:id/open` | `{ ok: true }` — marks the mention opened/read | 200 |
+| GET | `/api/activity?person_id=<id>&limit=&event_type=&actor_person_id=&from=&to=&q=` | activity history for that person (newest first) | 200 |
+| GET | `/api/activity/count?person_id=<id>` | `{ count }` total activity events | 200 |
 
 **No `DELETE`** — the app uses soft archive only; hard delete is intentionally not exposed.
 
@@ -83,6 +85,47 @@ Rows are created by the Worker on task create/update for newly mentioned people 
 blocks the response, independent of `EMAIL_ENABLED`). Requires the `mention_notifications` table
 (`d1/migrations/2026-06-25_add_mention_notifications.sql`) — see
 [`docs/email-notifications.md`](email-notifications.md) (§2a) and [`docs/d1-migration.md`](d1-migration.md).
+
+### Activity feed endpoints (general history)
+
+These back the **Activity** feed (header **bell** icon). Identity is the `person_id` param from
+the **Current user** selector — a **lightweight workflow identity, NOT auth** (any `person_id`
+is accepted), and **not** an audit-security log.
+
+**Activity vs. My Mentions:** Activity is a **read-only chronological history** of task events
+relevant to a person (assignments, mentions, Description/Notes updates, status/priority/due/
+closed-date changes, archive/restore). It has **no unread/read state**. My Mentions is the
+**actionable unread inbox** (mentions only, with open/read). They are intentionally separate.
+
+- `GET /api/activity?person_id=<id>` — events where `target_person_id = person_id`, **newest
+  first**. Each item includes: `id`, `task_id`, `task_number`, `task_title`, `task_archived`
+  (boolean), `actor_person_id`, `actor_name`, `target_person_id`, `target_name`, `event_type`,
+  `summary`, `details` (parsed `details_json` object) + `details_json` (raw), and `created_at`.
+  The frontend builds the deep link from `task_number` (`?task=TASK-<n>`). `person_id` is
+  required (else `400`).
+  - **Filters** (all optional, AND-combined): `event_type` (exact), `actor_person_id` (exact),
+    `from`/`to` (ISO date or datetime range over `created_at`; a date-only `to` includes the
+    whole day), `q` (case-insensitive `LIKE` over task title, summary, `details_json`, and the
+    task number), `limit` (default `50`, clamped `1..200`).
+- `GET /api/activity/count?person_id=<id>` — `{ "count": <n> }` total activity events for that
+  person (Activity has no unread concept, so the UI shows **no always-on bell badge**).
+
+**Event types:** `task_created`, `task_assigned`, `person_mentioned`, `task_updated`,
+`status_changed`, `priority_changed`, `due_date_changed`, `closed_date_changed`,
+`task_archived`, `task_restored`.
+
+**Targeting & self-suppression (one row per target person):** assignment → responsible person;
+mention → mentioned person; field changes (status/priority/dates/Description/Notes) → the
+**existing** responsible person, **suppressed when the actor is that person** (mirrors the email
+self-suppression); `task_created` → the opener, **suppressed when the opener is the actor**
+(avoids self-noise); archive/restore → responsible (else opener). Assignment/mention are not
+self-suppressed (mirrors the assignment/mention emails). A person who is both newly assigned and
+newly mentioned in the same change gets a single **assignment** row (precedence).
+
+Rows are written by the Worker on create/update/archive/restore (detached via `ctx.waitUntil`,
+never blocks the response, **independent of `EMAIL_ENABLED`**, fail-graceful). Requires the
+`activity_events` table (`d1/migrations/2026-06-26_add_activity_events.sql`) — see
+[`docs/d1-migration.md`](d1-migration.md).
 
 Response shapes are the D1 rows — the same snake_case columns the frontend already reads
 (`id`, `task_number`, `title`, `description`, `notes`, `status`, `priority`,

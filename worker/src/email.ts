@@ -46,6 +46,7 @@ export interface TaskRow {
   status?: string | null;
   priority?: number | null;
   due_date?: string | null;
+  closed_date?: string | null;
   responsible_person_id?: string | null;
   // Who opened/created the task. Resolved to a name and shown as the actor/opener in
   // emails ("Opened by: <name>" and "<name> mentioned you in a task.").
@@ -58,7 +59,7 @@ type RecipientKind = 'assignment' | 'mention' | 'update';
 //                prefix of new, or old was empty). Already rendered (@person:<id> → @Name)
 //                and trimmed. null when no confident append → use the Before/After fallback.
 //   * `before` / `after` — trimmed+rendered old/new text for the fallback block. Always set.
-interface FieldChange {
+export interface FieldChange {
   field: string;
   added: string | null;
   before: string;
@@ -133,7 +134,7 @@ function normalizeNewlines(text: string | null | undefined): string {
 //     text is newText.slice(oldText.length).trim().
 //   * Otherwise (a middle edit or deletion) → added = null; the email uses Before/After.
 // All emitted text has mentions rendered to @Name and is trimmed to MAX_FIELD_CHARS.
-function computeFieldChange(
+export function computeFieldChange(
   field: string,
   oldRaw: string | null | undefined,
   newRaw: string | null | undefined,
