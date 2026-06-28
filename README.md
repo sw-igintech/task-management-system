@@ -22,7 +22,12 @@ A complete task management system for the engineering team, built with Vite + Re
   best-effort, never blocks a task save; see [`docs/email-notifications.md`](docs/email-notifications.md)
 - **Current user** selector in the header (lightweight actor, **not** authentication) — stored
   in `localStorage`; sent as the optional `actor_person_id` so mention emails name who acted
-  ("Matan mentioned you…"); saving newly added mentions requires it (inline prompt, no popup)
+  ("Matan mentioned you…"); saving newly added mentions requires it (inline prompt, no popup).
+  Writing in **Description/Notes** also requires a Current user: those fields are read-only
+  until one is selected (focusing them lights the same attention cue + a small inline
+  "Please select Current user before writing updates." message), and each automatic dated
+  bullet now embeds the selected name — `• (Matan, 28.06.26) …` (existing historical
+  date-only bullets are **not** migrated; see `docs/task-text-traceability.md`)
 - **Update emails include the added text** — when Description/Notes change, the "task updated"
   email shows the actual added text (`Added to Notes: …`), with a Before/After fallback for
   mid-text edits; `@person:<id>` tokens render as `@Name` (see `docs/email-notifications.md`)

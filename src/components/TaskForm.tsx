@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent, FocusEvent as ReactFocusEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -51,14 +51,17 @@ export type TaskFormData = z.infer<typeof taskSchema>;
 // Text fields that receive the automatic dated traceability prefix.
 type TraceField = 'notes' | 'description';
 
-// Builds the bullet-style trace prefix "• (DD.MM.YY) " (bullet + space + date in
-// parentheses + one trailing space). e.g. 2026-06-17 -> "• (17.06.26) ". It is
-// plain, editable text saved inline in the field — not a component, lock, or DB column.
-function formatTracePrefix(d: Date): string {
+// Builds the bullet-style trace prefix "• (<name>, DD.MM.YY) " (bullet + space + the
+// Current user's display name + ", " + date in parentheses + one trailing space).
+// e.g. name "Matan" on 2026-06-28 -> "• (Matan, 28.06.26) ". It is plain, editable text
+// saved inline in the field — not a component, lock, or DB column. A Current user name is
+// always required: comment writing is blocked when none is selected (see canWriteComments),
+// so a date-only / "Unknown" prefix is never produced.
+function formatTracePrefix(d: Date, name: string): string {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yy = String(d.getFullYear() % 100).padStart(2, '0');
-  return `• (${dd}.${mm}.${yy}) `;
+  return `• (${name}, ${dd}.${mm}.${yy}) `;
 }
 
 interface TaskFormProps {
@@ -107,6 +110,30 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   // save would send an actor-dependent email (new mention, or a Description/Notes update to
   // an assigned person). Shown next to the Save button; never a modal/popup/alert.
   const [blockedForCurrentUser, setBlockedForCurrentUser] = useState(false);
+
+  // Display name of the selected Current user, resolved from the people list, or null when
+  // no Current user is selected (or a stale id no longer resolves). Used for two things:
+  //   1. The automatic comment bullet "• (<name>, DD.MM.YY) " (Feature A).
+  //   2. Gating whether Description/Notes may be written at all (Feature B): comment writing
+  //      is allowed ONLY when a name resolves, so a bullet is never created without one.
+  const currentUserName = useMemo(
+    () => (currentUserId ? people.find(p => p.id === currentUserId)?.name ?? null : null),
+    [currentUserId, people],
+  );
+  const canWriteComments = currentUserName !== null;
+
+  // Which comment field (Description/Notes) the operator tried to write in while no Current
+  // user is selected. Drives the small inline "select Current user" message under that field.
+  // Only ever shown while !canWriteComments, so selecting a user clears it automatically.
+  const [commentBlockedField, setCommentBlockedField] = useState<TraceField | null>(null);
+
+  // Called when the operator focuses/clicks/types/pastes/Enters in Description or Notes with
+  // no Current user selected: record which field (for the inline message) and light the
+  // existing header attention cue. Never a modal/popup/alert; never mutates the field.
+  const blockCommentWrite = (field: TraceField) => {
+    setCommentBlockedField(field);
+    onCurrentUserRequired?.(); // light the header Current-user attention cue
+  };
 
   // Person-mention ids ALREADY on the task before this edit (stored "@person:<id>" form).
   // Empty for a brand-new task → every person mention then counts as newly added.
@@ -208,10 +235,11 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   // clicking out and back in never insert anything (the previous focus-armed flag caused a
   // spurious bullet on refocus of a populated field). Once any text exists, typing is plain.
 
-  // Inserts "• (DD.MM.YY) " + the just-typed/pasted text into an empty field, then restores
-  // focus and places the caret right after the typed text.
+  // Inserts "• (<Current user>, DD.MM.YY) " + the just-typed/pasted text into an empty field,
+  // then restores focus and places the caret right after the typed text.
   const insertTracePrefix = (el: HTMLTextAreaElement, field: TraceField, typed: string) => {
-    const head = formatTracePrefix(new Date()) + typed;
+    if (!currentUserName) return; // never write a comment without a Current user (Feature B)
+    const head = formatTracePrefix(new Date(), currentUserName) + typed;
     setValue(field, head, { shouldDirty: true, shouldTouch: true });
     // setValue updates the uncontrolled textarea's value via RHF's ref; restore the
     // caret on the next frame so it lands after the inserted prefix + typed text.
@@ -221,16 +249,17 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
     });
   };
 
-  // Enter (without Shift): start a new line with a fresh "• (DD.MM.YY) " bullet and
-  // place the caret after it. Shift+Enter is left to the browser (a plain newline,
+  // Enter (without Shift): start a new line with a fresh "• (<Current user>, DD.MM.YY) "
+  // bullet and place the caret after it. Shift+Enter is left to the browser (a plain newline,
   // for continuing the same bullet across lines).
   const insertBulletLine = (el: HTMLTextAreaElement, field: TraceField) => {
+    if (!currentUserName) return; // never write a comment without a Current user (Feature B)
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? el.value.length;
     const before = el.value.slice(0, start);
     const after = el.value.slice(end);
     const lead = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-    const head = before + lead + formatTracePrefix(new Date());
+    const head = before + lead + formatTracePrefix(new Date(), currentUserName);
     setValue(field, head + after, { shouldDirty: true, shouldTouch: true });
     requestAnimationFrame(() => {
       el.focus();
@@ -253,6 +282,11 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
 
   const handleTracePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
+    if (!canWriteComments) {                            // no Current user → block writing (Feature B)
+      e.preventDefault();
+      blockCommentWrite(field);
+      return;
+    }
     if (e.currentTarget.value !== '') return;          // only auto-prefix an EMPTY field
     const text = e.clipboardData.getData('text');
     if (!text) return;
@@ -318,6 +352,21 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   //  4. Otherwise the first-printable-char trace-prefix logic runs.
   const handleTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const field = e.currentTarget.name as TraceField;
+    if (!canWriteComments) {
+      // No Current user selected → block writing (Feature B). The textarea is readOnly so the
+      // browser already suppresses native edits; here we also (a) prevent any auto-bullet /
+      // mention insertion and (b) surface the reason when the operator tries to TYPE
+      // (printable char, Enter, Shift+Enter, or IME). Copy/select/navigation keys (Ctrl/Cmd
+      // combos, arrows, etc.) are left alone so read-only text can still be copied/selected.
+      const isComposing = e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229;
+      const isPrintable = !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1;
+      const isEnter = e.key === 'Enter';
+      if (isComposing || isPrintable || isEnter) {
+        e.preventDefault();
+        blockCommentWrite(field);
+      }
+      return; // never run auto-bullet / mention logic without a Current user
+    }
     if (mention && mention.field === field && items.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => (i + 1) % items.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => (i - 1 + items.length) % items.length); return; }
@@ -339,12 +388,20 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
   // After a content key, recompute the mention (skip the nav keys handled above so we
   // don't reset the highlighted index while arrowing through the list).
   const handleTextareaKeyUp = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (!canWriteComments) return;                     // no writing → no mention popup (Feature B)
     if (NAV_KEYS.includes(e.key)) return;
     recomputeMention(e.currentTarget);
   };
 
   const handleTextareaClick = (e: ReactMouseEvent<HTMLTextAreaElement>) => {
+    if (!canWriteComments) { blockCommentWrite(e.currentTarget.name as TraceField); return; }
     recomputeMention(e.currentTarget);
+  };
+
+  // Focusing (click or keyboard tab) Description/Notes with no Current user selected lights
+  // the cue + inline message immediately, before any typing. Editing remains blocked.
+  const handleTextareaFocus = (e: ReactFocusEvent<HTMLTextAreaElement>) => {
+    if (!canWriteComments) blockCommentWrite(e.currentTarget.name as TraceField);
   };
 
   // register() objects captured once so the textarea onBlur can compose RHF's own
@@ -422,11 +479,14 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
         <Textarea
           label="Description"
           {...descReg}
+          readOnly={!canWriteComments}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
+          onFocus={handleTextareaFocus}
           onBlur={e => { descReg.onBlur(e); setMention(m => (m?.field === 'description' ? null : m)); }}
+          className={!canWriteComments ? 'bg-gray-50 cursor-not-allowed' : undefined}
           placeholder="Task description / what needs to be done... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task or mention a person)"
           rows={3}
         />
@@ -438,17 +498,25 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onHover={setActiveIndex}
           />
         )}
+        {commentBlockedField === 'description' && !canWriteComments && (
+          <p className="text-xs text-red-600 mt-1" role="alert">
+            Please select Current user before writing updates.
+          </p>
+        )}
       </div>
 
       <div className="relative">
         <Textarea
           label="Notes"
           {...notesReg}
+          readOnly={!canWriteComments}
           onPaste={handleTracePaste}
           onKeyDown={handleTextareaKeyDown}
           onKeyUp={handleTextareaKeyUp}
           onClick={handleTextareaClick}
+          onFocus={handleTextareaFocus}
           onBlur={e => { notesReg.onBlur(e); setMention(m => (m?.field === 'notes' ? null : m)); }}
+          className={!canWriteComments ? 'bg-gray-50 cursor-not-allowed' : undefined}
           placeholder="Updates / comments / ongoing log... (Enter = new dated bullet, Shift+Enter = same line, @ to reference a task or mention a person)"
           rows={4}
         />
@@ -459,6 +527,11 @@ export function TaskForm({ task, people, onSubmit, onCancel, isLoading, mentionT
             onSelect={selectSuggestion}
             onHover={setActiveIndex}
           />
+        )}
+        {commentBlockedField === 'notes' && !canWriteComments && (
+          <p className="text-xs text-red-600 mt-1" role="alert">
+            Please select Current user before writing updates.
+          </p>
         )}
       </div>
 
