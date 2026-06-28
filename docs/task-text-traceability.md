@@ -1,34 +1,53 @@
 # Automatic Dated Text Traceability (Notes & Description)
 
 > Lightweight in-text audit trail. When you start typing in a task's **Notes** or
-> **Description** field, the app auto-inserts today's date as a plain-text prefix so
-> updates are self-dated without any extra UI.
+> **Description** field, the app auto-inserts the **selected Current user's name** plus
+> today's date as a plain-text prefix so updates are self-attributed and self-dated without
+> any extra UI.
+
+## Requires a Current user (write guard)
+
+You can only write in **Description** or **Notes** when a **Current user** is selected in the
+header (the lightweight actor selector — **not** authentication). With no Current user:
+
+- Both textareas are `readOnly` — typing, pasting, and Enter do nothing.
+- Clicking/focusing either field lights the existing header **Current user attention cue**
+  (the pulsing red `.current-user-attention` ring) and shows a small **inline** message under
+  the field: `Please select Current user before writing updates.` (no modal/popup/alert).
+- Selecting a Current user clears the message + cue and makes the fields editable again.
+
+This is **only** for the comment-like fields (Description/Notes). Ordinary fields (title,
+status, priority, responsible/opened-by person, due/closed date) are unaffected by this guard.
 
 ## What it does
 
-When you click into the **Notes** or **Description** textarea and type your first
-character, the app inserts a **bullet + date** prefix immediately before that character:
+When you click into the **Notes** or **Description** textarea (with a Current user selected)
+and type your first character, the app inserts a **bullet + Current user name + date** prefix
+immediately before that character:
 
 ```
-• (17.06.26) c
+• (Matan, 28.06.26) c
 ```
 
 …then you keep typing normally:
 
 ```
-• (17.06.26) checked with Amit, waiting for answer
+• (Matan, 28.06.26) checked with Amit, waiting for answer
 ```
 
 There is **no button, checkbox, or toggle** — insertion is fully automatic, exactly once
 per editing interaction (and again on each Enter, see below).
 
-## Bullet + date format
+## Bullet + name + date format
 
-`• (DD.MM.YY) ` — a real bullet `•`, a space, the date in parentheses (2-digit
+`• (<Current user>, DD.MM.YY) ` — a real bullet `•`, a space, the selected Current user's
+display name (exactly as shown in the people list), `, `, the date in parentheses (2-digit
 `day.month.year`), then **one space**.
 
-- `2026-06-17` → `• (17.06.26) `
-- Built by `formatTracePrefix(new Date())` in `src/components/TaskForm.tsx`.
+- Current user `Matan`, `2026-06-28` → `• (Matan, 28.06.26) `
+- Built by `formatTracePrefix(new Date(), currentUserName)` in `src/components/TaskForm.tsx`.
+- **Historical bullets are never rewritten or migrated.** Only new auto-created bullets use
+  this name+date format; the old date-only `• (DD.MM.YY) ` text in existing tasks is left as-is.
 
 ## Enter vs Shift+Enter (Word-style bullets)
 
