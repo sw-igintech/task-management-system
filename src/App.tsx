@@ -100,7 +100,7 @@ function AppInner() {
               <Wrench size={18} />
             </div>
             <span className="font-bold text-gray-900 text-lg tracking-tight">
-              Engineering Task Manager..
+              Engineering Task Manager
             </span>
           </button>
 
