@@ -11,6 +11,7 @@ dist-ssr/
 .env.local
 .env.*.local
 !.env.example
+.mine
 
 # Backups produced by the task import/sync scripts — never commit
 backups/
